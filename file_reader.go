@@ -41,10 +41,10 @@ type Dict struct {
 }
 
 type Result struct {
-	dict  *Dict
-	dList *dictList
+	dict     *Dict
+	dList    *dictList
 	position int
-	field 	byte
+	field    byte
 }
 
 type Delimiter struct {
@@ -175,32 +175,27 @@ func getField(file []byte, pos int, dtype byte) ([]string, int, byte) {
 		ch = string(file[pos])
 		lengthS := ""
 
-		isNumber := false
+		var isNumber bool = false
 		var isEnd bool
 
 		if ch == "e" {
 			isEnd = true
-		}else{
+		} else {
 			isEnd = false
 		}
 
+		numberS := ""
+
 		for ch != "d" && ch != "l" && ch != ":" && !isEnd {
-			println("char " + ch)
+			println("char in at pos " +  strconv.Itoa(pos) + " " + ch)
 
 			lengthS += ch
 			pos++
 			ch = string(file[pos])
 
-			if ch == "i" {
+			if ch == "e"{
+				isEnd = true
 				isNumber = true
-			}
-
-			if ch == "e" {
-				if isNumber{
-					isNumber = false
-				}else{
-					isEnd = true
-				}
 			}
 
 		}
@@ -218,6 +213,11 @@ func getField(file []byte, pos int, dtype byte) ([]string, int, byte) {
 
 			seq = append(seq, content)
 			pos = pos + length
+		} else if isNumber {
+			println("NUMBER " + numberS)
+
+			seq = append(seq, "numberS")
+			pos++
 		}
 		counter++
 	}
@@ -231,15 +231,14 @@ func parse(dict *Dict, file []byte, pos int) Result {
 	position := pos
 	position++
 
-	stack := 0
-
 	if field == 'd' {
+		EOL := false
 		dict.dataList = make([]key, 0)
 		dict.mString = make(map[string]string, 0)
 		dict.mList = make(map[string]*dictList)
 		dict.mDict = make(map[string]*Dict)
 
-		for field != 'e' {
+		for !EOL {
 			data, p, f := getField(file, position, field)
 			position = p
 			field = f
@@ -249,7 +248,8 @@ func parse(dict *Dict, file []byte, pos int) Result {
 					dType: "d",
 				}
 				dict.dataList = append(dict.dataList, key)
-
+				println("key " + data[0])
+				println("value " + data[1])
 				dict.mString[data[0]] = data[1]
 				println("adding string  dict")
 				println("Field " + string(field))
@@ -258,35 +258,40 @@ func parse(dict *Dict, file []byte, pos int) Result {
 					key:   data[0],
 					dType: "l",
 				}
-				result := parse(dict, file, position)
 
+				println("key " + data[0])
+
+				result := parse(dict, file, position)
 
 				dict.dataList = append(dict.dataList, key)
 				dict.mList[data[0]] = result.dList
 				position = result.position
+				position++
 				println("adding list to dict")
 				println("Field " + string(field))
 			} else if field == 'd' {
+				println("position " + strconv.Itoa(position))
 				key := key{
 					key:   data[0],
 					dType: "d",
 				}
 				dict.dataList = append(dict.dataList, key)
-
-				result := parse(dict, file, position)
+				innerDict := new(Dict)
+				result := parse(innerDict, file, position)
 				position = result.position
-
-
-
+				position++
 				dict.mDict[data[0]] = result.dict
 				println("adding dict to dict")
 				println("Field " + string(field))
+			}
+			if file[position] == 'e' {
+				EOL = true
 			}
 			_ = position
 
 		}
 
-		return Result{dict: dict,dList: new(dictList),position: position,field: field}
+		return Result{dict: dict, dList: new(dictList), position: position, field: field}
 
 	} else if field == 'l' {
 
@@ -294,7 +299,8 @@ func parse(dict *Dict, file []byte, pos int) Result {
 		dList.lString = make([]string, 0)
 		dList.lList = make([]*dictList, 0)
 		dList.lDict = make([]*Dict, 0)
-		for field != 'e' {
+		EOL := false
+		for !EOL {
 			data, p, f := getField(file, position, field)
 			position = p
 			field = f
@@ -302,8 +308,8 @@ func parse(dict *Dict, file []byte, pos int) Result {
 				dList.lString = append(dList.lString, data[0])
 				println("adding string to list")
 				println("Field " + string(field))
-			} else if field == 'l' {
 
+			} else if field == 'l' {
 				result := parse(dict, file, position)
 				dList.lList = append(dList.lList, result.dList)
 				position = result.position
@@ -314,14 +320,17 @@ func parse(dict *Dict, file []byte, pos int) Result {
 				result := parse(dict, file, position)
 				dList.lDict = append(dList.lDict, result.dict)
 				position = result.position
+				position++
 				println("adding dict to list")
 				println("Field " + string(field))
 			}
-
+			if file[position] == 'e' {
+				EOL = true
+			}
 		}
 		_ = position
 
-		return Result{dict: new(Dict), dList: dList, position: position,field: field}
+		return Result{dict: new(Dict), dList: dList, position: position, field: field}
 	}
 
 	return Result{}

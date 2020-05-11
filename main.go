@@ -1,5 +1,7 @@
 package main
 
+import "fmt"
+
 //import "bytes"
 
 type myAwesomeObject struct {
@@ -33,6 +35,11 @@ func main() {
   dict := new(Dict)
 
   parse(dict,b,0)
+
+
+  println("DONE !!!!!!!!!!!!")
+
+  fmt.Printf("%#v",dict.mString["creation date"])
 
 
 
