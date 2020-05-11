@@ -1,15 +1,5 @@
 package main
 
-
-import (
-    "bytes"
-    bencode "github.com/jackpal/bencode-go"
-)
-
-import (
- "fmt"
- //"log"
-)
 //import "bytes"
 
 type myAwesomeObject struct {
@@ -19,25 +9,37 @@ type myAwesomeObject struct {
 
 
 func main() {
-  fmt.Printf("TORRENT")
-  b := readFile("files/tears-of-steel.torrent")
+  b := readFile("files/big-buck-bunny.torrent")
 
-  //fmt.Printf("%v\n",string(b))
-
+  ///Decode(b,0)
 
 
+  /*var field byte
+  var pos = 1
 
-  data2, _ := bencode.Decode(bytes.NewReader(b))
-
-  fmt.Printf("%v",data2)
+  for field == 0{
 
 
+    s,position,f := getField(b,pos,'d')
 
-  data := myAwesomeObject{}
-  err := bencode.Unmarshal(bytes.NewReader(b), &data)
-  fmt.Printf("%v",data)
+    field = f
+    fmt.Printf("%v\n",s)
+    fmt.Printf("position %v\n",position)
+    fmt.Printf("field %s\n",string(field))
 
-  if err != nil {
+    pos = position
   }
+*/
+  dict := new(Dict)
+
+  parse(dict,b,0)
+
+
+
+
+
+
+
+
 
 }
