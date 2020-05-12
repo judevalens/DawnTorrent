@@ -1,4 +1,4 @@
-package main
+package parser
 
 import (
 	"container/list"
@@ -33,11 +33,10 @@ type dictList struct {
 }
 
 type Dict struct {
-	dataList []key
-	mString  map[string]string
-	mInt     map[string]int
-	mDict    map[string]*Dict
-	mList    map[string]*dictList
+	dataList  []key
+	MapString map[string]string
+	MapDict   map[string]*Dict
+	MapList   map[string]*dictList
 }
 
 type Result struct {
@@ -55,7 +54,19 @@ type Delimiter struct {
 	position      int
 }
 
-func readFile(path string) []byte {
+func Unmashal(path string)  *Dict{
+
+	file := ReadFile(path)
+
+	dict :=  new(Dict)
+
+	Parse(dict,file,0)
+
+	return dict
+
+}
+
+func ReadFile(path string) []byte {
 	file, err := ioutil.ReadFile(path)
 	if err != nil {
 		log.Fatal(err)
@@ -63,7 +74,7 @@ func readFile(path string) []byte {
 	return file
 }
 
-func Decode(file []byte, offset int) {
+func decode(file []byte, offset int) {
 	//dict := Dict{}
 
 	contentLength := 0
@@ -176,18 +187,20 @@ func getField(file []byte, pos int, dtype byte) ([]string, int, byte) {
 		lengthS := ""
 
 		var isNumber bool = false
-		var isEnd bool
+		var isEnd bool = false
 
 		if ch == "e" {
 			isEnd = true
-		} else {
-			isEnd = false
 		}
 
 		numberS := ""
 
 		for ch != "d" && ch != "l" && ch != ":" && !isEnd {
 			println("char in at pos " +  strconv.Itoa(pos) + " " + ch)
+
+			if ch == "i"{
+				isNumber = true
+			}
 
 			lengthS += ch
 			pos++
@@ -196,6 +209,14 @@ func getField(file []byte, pos int, dtype byte) ([]string, int, byte) {
 			if ch == "e"{
 				isEnd = true
 				isNumber = true
+			}
+
+			if isNumber{
+				_,err := strconv.Atoi(ch)
+
+				if err == nil{
+					numberS += ch
+				}
 			}
 
 		}
@@ -216,7 +237,7 @@ func getField(file []byte, pos int, dtype byte) ([]string, int, byte) {
 		} else if isNumber {
 			println("NUMBER " + numberS)
 
-			seq = append(seq, "numberS")
+			seq = append(seq, numberS)
 			pos++
 		}
 		counter++
@@ -225,7 +246,7 @@ func getField(file []byte, pos int, dtype byte) ([]string, int, byte) {
 	return seq, pos, field
 }
 
-func parse(dict *Dict, file []byte, pos int) Result {
+func Parse(dict *Dict, file []byte, pos int) Result {
 
 	field := file[pos]
 	position := pos
@@ -234,9 +255,9 @@ func parse(dict *Dict, file []byte, pos int) Result {
 	if field == 'd' {
 		EOL := false
 		dict.dataList = make([]key, 0)
-		dict.mString = make(map[string]string, 0)
-		dict.mList = make(map[string]*dictList)
-		dict.mDict = make(map[string]*Dict)
+		dict.MapString = make(map[string]string, 0)
+		dict.MapList = make(map[string]*dictList)
+		dict.MapDict = make(map[string]*Dict)
 
 		for !EOL {
 			data, p, f := getField(file, position, field)
@@ -250,7 +271,7 @@ func parse(dict *Dict, file []byte, pos int) Result {
 				dict.dataList = append(dict.dataList, key)
 				println("key " + data[0])
 				println("value " + data[1])
-				dict.mString[data[0]] = data[1]
+				dict.MapString[data[0]] = data[1]
 				println("adding string  dict")
 				println("Field " + string(field))
 			} else if field == 'l' {
@@ -261,10 +282,10 @@ func parse(dict *Dict, file []byte, pos int) Result {
 
 				println("key " + data[0])
 
-				result := parse(dict, file, position)
+				result := Parse(dict, file, position)
 
 				dict.dataList = append(dict.dataList, key)
-				dict.mList[data[0]] = result.dList
+				dict.MapList[data[0]] = result.dList
 				position = result.position
 				position++
 				println("adding list to dict")
@@ -277,10 +298,10 @@ func parse(dict *Dict, file []byte, pos int) Result {
 				}
 				dict.dataList = append(dict.dataList, key)
 				innerDict := new(Dict)
-				result := parse(innerDict, file, position)
+				result := Parse(innerDict, file, position)
 				position = result.position
 				position++
-				dict.mDict[data[0]] = result.dict
+				dict.MapDict[data[0]] = result.dict
 				println("adding dict to dict")
 				println("Field " + string(field))
 			}
@@ -310,14 +331,14 @@ func parse(dict *Dict, file []byte, pos int) Result {
 				println("Field " + string(field))
 
 			} else if field == 'l' {
-				result := parse(dict, file, position)
+				result := Parse(dict, file, position)
 				dList.lList = append(dList.lList, result.dList)
 				position = result.position
 				position++
 				println("adding list to list")
 				println("Field " + string(field))
 			} else if field == 'd' {
-				result := parse(dict, file, position)
+				result := Parse(dict, file, position)
 				dList.lDict = append(dList.lDict, result.dict)
 				position = result.position
 				position++
@@ -335,3 +356,24 @@ func parse(dict *Dict, file []byte, pos int) Result {
 
 	return Result{}
 }
+
+func GetHash(dict *Dict)  [][]byte{
+	bytesPerHash := 20
+
+	hash := make([][]byte,0)
+
+	s := dict.MapDict["info"].MapString["pieces"]
+
+	sLen := len(s)
+
+	counter  := 0
+
+	for counter < sLen{
+		b :=  []byte(s[counter:counter+bytesPerHash])
+		hash = append(hash, b)
+		counter += bytesPerHash
+
+	}
+	return hash
+}
+
