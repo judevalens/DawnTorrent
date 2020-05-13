@@ -1,40 +1,27 @@
 package main
 
 import (
-  "encoding/hex"
   "fmt"
   "torrent/parser"
 )
 
-//import "bytes"
-
-type myAwesomeObject struct {
-  announce string
-}
-
-
-
 func main() {
 
 
-  var dict *parser.Dict = parser.Unmashal("files/FreeBSD-11.4-BETA1-i386-disc1.torrent")
+  var dict = parser.Unmarshall("files/tears-of-steel.torrent")
+//
+ // file := parser.ReadFile("files/tears-of-steel.torrent")
 
   println("DONE !!!!!!!!!!!!")
-  fmt.Printf("%#v\n",dict)
-  println("HASH")
-  hashes := parser.GetHash(dict)
+  fmt.Printf("%#v\n",dict.DataList[0])
+  fmt.Printf("%#v\n",dict.MapDict["info"].KeyInfo)
+  fmt.Printf("%#v\n",dict.MapList["announce-list"].KeyInfo)
 
-  fmt.Printf("%#v\n",hashes)
+ //fmt.Printf("%v\n", string(file[dict.MapDict["info"].KeyInfo.InnerStartingPosition:dict.MapDict["info"].KeyInfo.InnerEndingPosition]))
 
-
-  file := parser.ReadFile("files/FreeBSD-11.4-BETA1-i386-disc1.torrent")
-
-  _ = file
+ b:= GetInfoHash(dict.OriginalFile,dict)
 
 
-
-  encodedStr := hex.EncodeToString(hashes[0])
-
-  fmt.Printf("%s\n", encodedStr)
+ fmt.Printf("%s", b)
 
 }

@@ -19,9 +19,13 @@ const (
 var openDel list.List
 var closing list.List
 
-type key struct {
-	key   string
-	dType string
+type containerInformation struct {
+	key                   string
+	dType                 string
+	StartingPosition      int
+	EndingPosition        int
+	InnerStartingPosition int
+	InnerEndingPosition   int
 }
 
 type dictList struct {
@@ -30,13 +34,19 @@ type dictList struct {
 	lDict   []*Dict
 	lList   []*dictList
 	value   string
+	KeyInfo *containerInformation
+	originalFile []byte
+
 }
 
 type Dict struct {
-	dataList  []key
+	DataList  []*containerInformation
 	MapString map[string]string
 	MapDict   map[string]*Dict
 	MapList   map[string]*dictList
+	OriginalFile []byte
+
+	KeyInfo *containerInformation
 }
 
 type Result struct {
@@ -54,13 +64,15 @@ type Delimiter struct {
 	position      int
 }
 
-func Unmashal(path string)  *Dict{
+func Unmarshall(path string) *Dict {
 
 	file := ReadFile(path)
 
-	dict :=  new(Dict)
+	dict := new(Dict)
 
-	Parse(dict,file,0)
+	Parse(dict, file, 0)
+
+	dict.OriginalFile = file
 
 	return dict
 
@@ -196,9 +208,9 @@ func getField(file []byte, pos int, dtype byte) ([]string, int, byte) {
 		numberS := ""
 
 		for ch != "d" && ch != "l" && ch != ":" && !isEnd {
-			println("char in at pos " +  strconv.Itoa(pos) + " " + ch)
+			println("char in at pos " + strconv.Itoa(pos) + " " + ch)
 
-			if ch == "i"{
+			if ch == "i" {
 				isNumber = true
 			}
 
@@ -206,15 +218,15 @@ func getField(file []byte, pos int, dtype byte) ([]string, int, byte) {
 			pos++
 			ch = string(file[pos])
 
-			if ch == "e"{
+			if ch == "e" {
 				isEnd = true
 				isNumber = true
 			}
 
-			if isNumber{
-				_,err := strconv.Atoi(ch)
+			if isNumber {
+				_, err := strconv.Atoi(ch)
 
-				if err == nil{
+				if err == nil {
 					numberS += ch
 				}
 			}
@@ -248,68 +260,93 @@ func getField(file []byte, pos int, dtype byte) ([]string, int, byte) {
 
 func Parse(dict *Dict, file []byte, pos int) Result {
 
+	// determine which container it is (map or list)
 	field := file[pos]
 	position := pos
 	position++
 
+	// EOL -> end of a container
+	// used to know when to backtrack, when there is no more element to add to container
+	EOL := false
+
+
 	if field == 'd' {
-		EOL := false
-		dict.dataList = make([]key, 0)
+
+		dict.DataList = make([]*containerInformation, 0)
 		dict.MapString = make(map[string]string, 0)
 		dict.MapList = make(map[string]*dictList)
 		dict.MapDict = make(map[string]*Dict)
 
 		for !EOL {
+
+
+			containerInfo := new(containerInformation)
+
+			//Store the stating position of this container in the bencoded file
+			containerInfo.StartingPosition = position
+
+			/*
+			getField reads the next field if its a simple child (String) we added it to the current dictionary
+			if it's it a container, we create and process the content of that content of that container first then add it to the this current container
+			 */
 			data, p, f := getField(file, position, field)
+
+
+
 			position = p
 			field = f
+
+			containerInfo.key = data[0]
+			containerInfo.dType = string(field)
+			//store the starting of the content of the container
+			containerInfo.InnerStartingPosition = position
+
+			//field = 0 -> normal field (a string), field = d -> innerDictionary, field = l -> innerList
+
 			if field == 0 || field == 'e' {
-				key := key{
-					key:   data[0],
-					dType: "d",
-				}
-				dict.dataList = append(dict.dataList, key)
+				dict.DataList = append(dict.DataList, containerInfo)
+				dict.MapString[data[0]] = data[1]
+
 				println("key " + data[0])
 				println("value " + data[1])
-				dict.MapString[data[0]] = data[1]
 				println("adding string  dict")
 				println("Field " + string(field))
 			} else if field == 'l' {
-				key := key{
-					key:   data[0],
-					dType: "l",
-				}
 
-				println("key " + data[0])
 
 				result := Parse(dict, file, position)
-
-				dict.dataList = append(dict.dataList, key)
 				dict.MapList[data[0]] = result.dList
+
+				result.dList.KeyInfo = containerInfo
+				dict.DataList = append(dict.DataList, containerInfo)
 				position = result.position
 				position++
+				println("key " + data[0])
 				println("adding list to dict")
 				println("Field " + string(field))
 			} else if field == 'd' {
-				println("position " + strconv.Itoa(position))
-				key := key{
-					key:   data[0],
-					dType: "d",
-				}
-				dict.dataList = append(dict.dataList, key)
+
+
+				dict.DataList = append(dict.DataList, containerInfo)
 				innerDict := new(Dict)
 				result := Parse(innerDict, file, position)
+				result.dict.KeyInfo = containerInfo
 				position = result.position
 				position++
 				dict.MapDict[data[0]] = result.dict
+				dict.KeyInfo = containerInfo
+
+				println("position " + strconv.Itoa(position))
 				println("adding dict to dict")
 				println("Field " + string(field))
+
 			}
 			if file[position] == 'e' {
 				EOL = true
 			}
+			containerInfo.EndingPosition = position
+			containerInfo.InnerEndingPosition = position-1
 			_ = position
-
 		}
 
 		return Result{dict: dict, dList: new(dictList), position: position, field: field}
@@ -320,25 +357,35 @@ func Parse(dict *Dict, file []byte, pos int) Result {
 		dList.lString = make([]string, 0)
 		dList.lList = make([]*dictList, 0)
 		dList.lDict = make([]*Dict, 0)
-		EOL := false
 		for !EOL {
+			containerInfo := new(containerInformation)
+			containerInfo.StartingPosition = position
+
 			data, p, f := getField(file, position, field)
 			position = p
 			field = f
+
+			containerInfo.dType = string(field)
+			containerInfo.InnerStartingPosition = position
 			if field == 'e' {
 				dList.lString = append(dList.lString, data[0])
 				println("adding string to list")
 				println("Field " + string(field))
 
 			} else if field == 'l' {
+				containerInfo.key = strconv.Itoa(len(dList.lList))
 				result := Parse(dict, file, position)
+				dList.KeyInfo = containerInfo
 				dList.lList = append(dList.lList, result.dList)
 				position = result.position
 				position++
 				println("adding list to list")
 				println("Field " + string(field))
 			} else if field == 'd' {
+				containerInfo.key = strconv.Itoa(len(dList.lDict))
+
 				result := Parse(dict, file, position)
+				dList.KeyInfo = containerInfo
 				dList.lDict = append(dList.lDict, result.dict)
 				position = result.position
 				position++
@@ -348,8 +395,11 @@ func Parse(dict *Dict, file []byte, pos int) Result {
 			if file[position] == 'e' {
 				EOL = true
 			}
+
+			containerInfo.EndingPosition = position
+			containerInfo.InnerEndingPosition = position - 1
+			_ = position
 		}
-		_ = position
 
 		return Result{dict: new(Dict), dList: dList, position: position, field: field}
 	}
@@ -357,23 +407,4 @@ func Parse(dict *Dict, file []byte, pos int) Result {
 	return Result{}
 }
 
-func GetHash(dict *Dict)  [][]byte{
-	bytesPerHash := 20
-
-	hash := make([][]byte,0)
-
-	s := dict.MapDict["info"].MapString["pieces"]
-
-	sLen := len(s)
-
-	counter  := 0
-
-	for counter < sLen{
-		b :=  []byte(s[counter:counter+bytesPerHash])
-		hash = append(hash, b)
-		counter += bytesPerHash
-
-	}
-	return hash
-}
 
