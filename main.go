@@ -1,27 +1,23 @@
 package main
 
 import (
-  "fmt"
+  "strings"
   "torrent/parser"
 )
 
 func main() {
 
 
-  var dict = parser.Unmarshall("files/tears-of-steel.torrent")
-//
- // file := parser.ReadFile("files/tears-of-steel.torrent")
+  torrentPath := "files/ubuntu-20.04-desktop-amd64.iso.torrent"
 
-  println("DONE !!!!!!!!!!!!")
-  fmt.Printf("%#v\n",dict.DataList[0])
-  fmt.Printf("%#v\n",dict.MapDict["info"].KeyInfo)
-  fmt.Printf("%#v\n",dict.MapList["announce-list"].KeyInfo)
+  torrentPaths := strings.Split(torrentPath, "/")
 
- //fmt.Printf("%v\n", string(file[dict.MapDict["info"].KeyInfo.InnerStartingPosition:dict.MapDict["info"].KeyInfo.InnerEndingPosition]))
+  filname := torrentPaths[len(torrentPaths)-1]
 
- b:= GetInfoHash(dict.OriginalFile,dict)
+  var dict = parser.Unmarshall(torrentPath)
 
 
- fmt.Printf("%s", b)
+  SaveTorrentFile([]byte(parser.ToBencode(dict)),filname)
+
 
 }
