@@ -42,7 +42,6 @@ type Dict struct {
 	MapString    map[string]string
 	MapDict      map[string]*Dict
 	MapList      map[string]*dictList
-	OriginalFile []byte
 	KeyInfo      *containerInformation
 }
 
@@ -75,7 +74,6 @@ func Unmarshall(path string) *Dict {
 
 	dict.KeyInfo = containerInfo
 
-	dict.OriginalFile = file
 
 	return dict
 
@@ -92,7 +90,6 @@ func UnmarshallFromArray(file []byte) *Dict {
 	containerInfo.InnerEndingPosition = r.position
 
 	dict.KeyInfo = containerInfo
-	dict.OriginalFile = file
 
 	return dict
 
