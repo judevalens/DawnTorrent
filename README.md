@@ -1,3 +1,3 @@
 # DawnTorrent
 ``````
-CLI based torrent client
+CLI based Bittorrent client
