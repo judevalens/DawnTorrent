@@ -3,14 +3,16 @@ package parser
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
+	"log"
 	"math"
 	//	"strconv"
 	//"encoding/binary"
 )
 
 const (
-	HanShakeMsg     = 10
+	HandShakeMsg    = 10
 	ChockeMsg       = 0
 	UnchockeMsg     = 1
 	InterestedMsg   = 2
@@ -20,6 +22,8 @@ const (
 	RequestMsg      = 6
 	PieceMsg        = 7
 	CancelMsg       = 8
+	DefaultMsgID 	= 0
+
 )
 
 var (
@@ -42,60 +46,143 @@ var (
 )
 
 type MSG struct {
-	msgID      uint32
-	msgLen     uint32
-	field      map[string][]byte
-	pieceIndex uint32
-	begin      uint32
-	bitfield   []byte
-	pieceLen   uint32
-	piece      []byte
-	rawMsg     []byte
+	MsgID          uint64
+	MsgLen         uint32
+	field          map[string][]byte
+	PieceIndex     uint32
+	BeginIndex     uint32
+	BitfieldRaw    []byte
+	PieceLen       uint32
+	Piece          []byte
+	rawMsg         []byte
+	availablePiece []bool
+	InfoHash       []byte
+	MyPeerID	string
 }
 
-func GetMsg(infoHash string, peerID string, msgType int) []byte {
-	var msg = make([]byte, 0)
-	switch msgType {
+func GetMsg(msg MSG) []byte {
+	var msgByte = make([]byte, 0)
+	switch msg.MsgID {
 
-	case HanShakeMsg:
-		infoHashByte := []byte(infoHash)
-		peerIDByte := []byte(peerID)
+	case HandShakeMsg:
+		infoHashByte := []byte(msg.InfoHash)
+		peerIDByte := []byte(msg.MyPeerID)
 
-		msg = bytes.Join([][]byte{HandShakePrefixLength, ProtocolIdentifier, BitTorrentReservedByte, infoHashByte, peerIDByte}, []byte(""))
+		msgByte = bytes.Join([][]byte{HandShakePrefixLength, ProtocolIdentifier, BitTorrentReservedByte, infoHashByte, peerIDByte}, []byte(""))
+	case RequestMsg:
+		msgByte = bytes.Join([][]byte{requestMsgLen, intToByte(int(msg.MsgID),1), intToByte(int(msg.PieceIndex),4),intToByte(int(msg.BeginIndex),4),intToByte(int(msg.PieceLen),4)}, []byte(""))
+	case CancelMsg:
+		msgByte = bytes.Join([][]byte{requestMsgLen, intToByte(int(msg.MsgID),1), intToByte(int(msg.PieceIndex),4),intToByte(int(msg.BeginIndex),4),intToByte(int(msg.PieceLen),4)}, []byte(""))
+	case PieceMsg:
+		msgByte = bytes.Join([][]byte{intToByte(int(13+msg.PieceLen),4), intToByte(int(msg.MsgID),1), intToByte(int(msg.PieceIndex),4),intToByte(int(msg.BeginIndex),4),msg.Piece}, []byte(""))
+	case HaveMsg:
+		msgByte = bytes.Join([][]byte{intToByte(5,4),intToByte(int(msg.MsgID),1),intToByte(int(msg.PieceIndex),4)}, []byte(""))
+	default:
+		idByte := make([]byte,1)
+		binary.PutUvarint(idByte, msg.MsgID)
+		msgByte = bytes.Join([][]byte{chokeMsgLen,intToByte(int(msg.MsgID),1)}, []byte(""))
+		
 	}
 
-	fmt.Printf("%v\n", msg)
-	hs := string(msg)
+	fmt.Printf("%v\n", msgByte)
+	hs := string(msgByte)
 	fmt.Printf("%v\n", string(hs))
 
-	return msg
+	return msgByte
 }
 
-func parseMsg(msg []byte) MSG {
+func ParseMsg(msg []byte) MSG {
 	msgStruct := MSG{}
-	if string(msg) == string(HandShakePrefixLength) {
-		// It is a hanShake
-		msgStruct.msgID = HanShakeMsg
-		msgStruct.msgLen = binary.BigEndian.Uint32(msg[0:1])
-	} else {
-		msgStruct.msgLen = binary.BigEndian.Uint32(msg[0:4])
-		msgStruct.msgID = binary.BigEndian.Uint32(msg[4:5])
 
-		switch msgStruct.msgID {
-		case BitfieldMsg:
-			msgStruct.pieceLen = uint32(math.Abs(float64(msgStruct.pieceLen-binary.BigEndian.Uint32(BitFieldMsgLen))))
-			msgStruct.bitfield = msg[5:msgStruct.msgLen+5]
-		case RequestMsg:
-			msgStruct.pieceIndex = binary.BigEndian.Uint32(msg[5:9])
-			msgStruct.begin = binary.BigEndian.Uint32(msg[9:13])
-			msgStruct.pieceLen = binary.BigEndian.Uint32(msg[13:17])
-		case PieceMsg:
-			msgStruct.pieceIndex = binary.BigEndian.Uint32(msg[5:9])
-			msgStruct.begin = binary.BigEndian.Uint32(msg[9:13])
-			msgStruct.pieceLen = uint32(math.Abs(float64(binary.BigEndian.Uint32(msg[13:17]) - binary.BigEndian.Uint32(pieceLen))))
-			msgStruct.piece = msg[17:msgStruct.pieceLen]
+	msgStruct.MsgLen = binary.BigEndian.Uint32(msg[0:4])
+	msgStruct.MsgID, _ = binary.Uvarint(msg[4:5])
+
+	fmt.Printf("MsgLen %v MsgID %v ", msgStruct.MsgLen, msgStruct.MsgID)
+
+	switch msgStruct.MsgID {
+	case BitfieldMsg:
+		msgStruct.PieceLen = uint32(math.Abs(float64(msgStruct.MsgLen - binary.BigEndian.Uint32(BitFieldMsgLen))))
+		fmt.Printf("piece Len %v\n", msgStruct.PieceLen)
+
+		msgStruct.BitfieldRaw = msg[5 : msgStruct.PieceLen+5]
+		msgStruct.availablePiece = make([]bool, msgStruct.PieceLen*8)
+
+		for i, b := range msgStruct.BitfieldRaw {
+			bitIndex := 7
+			for bitIndex >= 0 {
+
+				pieceIndex := (7 - bitIndex) + (i * 8)
+
+				currentBit := uint8(math.Exp2(float64(bitIndex)))
+				bit := b & currentBit
+				msgStruct.availablePiece[pieceIndex] = bit != 0
+
+				bitIndex--
+			}
+
 		}
+	case RequestMsg:
+		msgStruct.PieceIndex = binary.BigEndian.Uint32(msg[5:9])
+		msgStruct.BeginIndex = binary.BigEndian.Uint32(msg[9:13])
+		msgStruct.PieceLen = binary.BigEndian.Uint32(msg[13:17])
+	case PieceMsg:
+		msgStruct.PieceIndex = binary.BigEndian.Uint32(msg[5:9])
+		msgStruct.BeginIndex = binary.BigEndian.Uint32(msg[9:13])
+		msgStruct.PieceLen = uint32(math.Abs(float64(msgStruct.MsgLen - binary.BigEndian.Uint32(pieceLen))))
+		msgStruct.Piece = msg[17:msgStruct.PieceLen+17]
+	case HaveMsg:
+		msgStruct.PieceIndex = binary.BigEndian.Uint32(msg[5:9])
+	case CancelMsg:
+		msgStruct.PieceIndex = binary.BigEndian.Uint32(msg[5:9])
+		msgStruct.BeginIndex = binary.BigEndian.Uint32(msg[9:13])
+		msgStruct.PieceLen = binary.BigEndian.Uint32(msg[13:17])
 	}
 
 	return msgStruct
+}
+
+func ParseHandShake(msg []byte, infoHash string) (MSG, error) {
+	msgStruct := MSG{}
+	var err error = nil
+	println("new Handshake")
+	println(msg)
+	if string(msg[0:1]) == string(HandShakePrefixLength) {
+		if string(msg[1:20]) == string(ProtocolIdentifier) {
+			fmt.Printf("info hash : %v\n", msg[28:48])
+			if string(msg[28:48]) == infoHash {
+				msgStruct.MsgID = HandShakeMsg
+				msgStruct.rawMsg = msg
+			} else {
+				err = errors.New("handshake \n bad info hash")
+
+				log.Fatal("infoHash Failed")
+			}
+
+		} else {
+			err = errors.New("handshake \n wrong protocol")
+
+			log.Fatal("identifier failed")
+		}
+	} else {
+		err = errors.New("handshake \n wrong protocol")
+
+		log.Fatal("id failed")
+	}
+
+	return msgStruct, err
+}
+
+func intToByte(n int,nByte int)  []byte{
+	b := make([]byte,nByte)
+
+	if nByte < 2 {
+		binary.PutUvarint(b, uint64(n))
+	}else if nByte >= 2 && nByte < 4 {
+		binary.BigEndian.PutUint16(b,uint16(n))
+	}else if nByte >= 4 && nByte < 8 {
+		binary.BigEndian.PutUint32(b,uint32(n))
+	}
+
+	return b
+
 }

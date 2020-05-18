@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -20,17 +21,15 @@ const (
 	completedEvent = "completed"
 )
 
-
-
 type Torrent struct {
 	TrackerResponse *parser.Dict
 	TorrentFile     *parser.Dict
 	Peers           []*Peer
 
-	incomingCon 	map[string]*Peer
-	outgoingCon		map[string]*Peer
+	incomingCon map[string]*Peer
+	outgoingCon map[string]*Peer
 
-
+	activeConnection map[string]*Peer
 }
 
 func NewTorrent(torrentPath string) *Torrent {
@@ -38,22 +37,40 @@ func NewTorrent(torrentPath string) *Torrent {
 	var torrentFile = parser.Unmarshall(torrentPath)
 
 	torrent := new(Torrent)
+	torrent.activeConnection = make(map[string]*Peer, 0)
 	torrent.TorrentFile = torrentFile
 	torrent.TorrentFile.MapString["infoHash"] = parser.GetInfoHash(torrentFile)
 
 	torrent.TrackerRequest(startedEvent)
+	torrent.addPeers()
 
-	fmt.Printf("%v\n", torrent.TrackerResponse.MapList["peers"].LDict[0].MapString["ip"])
-	fmt.Printf("%v\n", torrent.TrackerResponse.MapList["peers"].LDict[0].MapString["peer id"])
-	fmt.Printf("%v\n", torrent.TrackerResponse.MapList["peers"].LDict[0].MapString["port"])
+	fmt.Printf("%v\n", torrent.Peers[len(torrent.Peers)-1].ip)
+	fmt.Printf("%v\n", torrent.Peers[len(torrent.Peers)-1].id)
+	fmt.Printf("%v\n", torrent.Peers[len(torrent.Peers)-1].port)
 
 	return torrent
 }
 
 func (torrent *Torrent) addPeers() {
-	for _, peer := range torrent.TrackerResponse.MapList["peers"].LDict {
 
-		torrent.Peers = append(torrent.Peers, NewPeer(peer))
+	_, isPresent := torrent.TrackerResponse.MapList["peers"]
+
+	if isPresent {
+		for _, peer := range torrent.TrackerResponse.MapList["peers"].LDict {
+
+			torrent.Peers = append(torrent.Peers, NewPeer(peer))
+
+		}
+	} else {
+
+		peers := torrent.TrackerResponse.MapString["peers"]
+		i := 0
+		fmt.Printf("LEN %v \n", len(peers))
+		for i < len(peers) {
+			fmt.Printf("peers : %v\n", []byte(peers[i:(i+6)]))
+			torrent.Peers = append(torrent.Peers, NewPeerFromString([]byte(peers[i:(i+6)])))
+			i += 6
+		}
 
 	}
 
@@ -109,6 +126,38 @@ func (torrent *Torrent) TrackerRequest(event string) {
 	}
 }
 
+func (torrent *Torrent) Listen() {
+	sever, err := net.Listen("tcp", ":"+strconv.Itoa(utils.PORT))
+	println("eer")
+
+	for {
+		if err == nil {
+			connection, connErr := sever.Accept()
+
+			println("newPeer\n")
+
+			if connErr == nil {
+				go torrent.handleNewPeer(connection)
+			}
+
+		} else {
+			println("eer")
+			log.Fatal(err)
+		}
+
+	}
+}
+
+func (torrent *Torrent) handleNewPeer(conn net.Conn) {
+	mLen := 0
+	b := make([]byte, 68)
+	mLen, _ = bufio.NewReader(conn).Read(b)
+	fmt.Printf("read %v msg from %v : %v\n", mLen, conn.RemoteAddr(), b)
+
+	_, _ = parser.ParseHandShake(b, torrent.TorrentFile.MapString["infoHash"])
+
+}
+
 type Peer struct {
 	ip   string
 	port string
@@ -123,46 +172,82 @@ func NewPeer(dict *parser.Dict) *Peer {
 	return newPeer
 }
 
-func (peer *Peer) connectTo() (*net.TCPConn, error) {
+func NewPeerFromString(peer []byte) *Peer {
+	newPeer := new(Peer)
+	newPeer.id = "N/A"
+
+	ipByte := peer[0:4]
+
+	ipString := ""
+	for i := range ipByte {
+
+		formatByte := make([]byte, 0)
+		formatByte = append(formatByte, 0)
+		formatByte = append(formatByte, ipByte[i])
+		n := binary.BigEndian.Uint16(formatByte)
+		fmt.Printf("num byte %d\n", formatByte)
+		fmt.Printf("num %v\n", n)
+
+		if i != len(ipByte)-1 {
+			ipString += strconv.FormatUint(uint64(n), 10) + "."
+		} else {
+			ipString += strconv.FormatUint(uint64(n), 10)
+		}
+	}
+
+	newPeer.ip = ipString
+
+	n := binary.BigEndian.Uint16(peer[4:6])
+
+	newPeer.port = strconv.FormatUint(uint64(n), 10)
+
+	fmt.Printf("ip %v\n", newPeer.ip)
+	fmt.Printf("port %v\n", newPeer.port)
+	fmt.Printf("ip byte %#v\n", peer)
+
+	return newPeer
+}
+
+func (peer *Peer) connectTo(torrent *Torrent) (*net.TCPConn, error) {
+
 	remotePeerAddr, _ := net.ResolveTCPAddr("tcp", peer.ip+":"+peer.port)
 	connection, err := net.DialTCP("tcp", utils.LocalAddr, remotePeerAddr)
-		if err != nil{
-			log.Fatal(err)
-		}
-	fmt.Printf("addr %v \n",remotePeerAddr)
-	fmt.Printf("con %v \n",connection)
+	if err != nil {
+		log.Fatal(err)
+	}
+	println("---------------------------------")
+	fmt.Printf("Remote Addr %v \n", remotePeerAddr)
+
+	msg := parser.MSG{MsgID: parser.HandShakeMsg, InfoHash: []byte(torrent.TorrentFile.MapString["infoHash"])}
+	nByteWritten, writeErr := connection.Write(parser.GetMsg(msg))
+	fmt.Printf("write %v bytes with %v err\n", nByteWritten, writeErr)
+
+	handshakeBytes := make([]byte, 68)
+	_, readFromConError := bufio.NewReader(connection).Read(handshakeBytes)
+
+	fmt.Printf("Back HandShake %v\n", handshakeBytes)
+
+	_, handShakeErr := parser.ParseHandShake(handshakeBytes, torrent.TorrentFile.MapString["infoHash"])
+
+	if handShakeErr == nil && readFromConError == nil {
+		torrent.activeConnection[remotePeerAddr.String()] = peer
+	}
+
+	println("---------------------------------")
+
+	i := 0
+
+	for readFromConError == nil {
+		incomingMsg := make([]byte, 500)
+
+		_, readFromConError = bufio.NewReader(connection).Read(incomingMsg)
+
+		fmt.Printf("new msg # %v : %v\n", i, string(incomingMsg))
+		fmt.Printf("new msg byte # %v : %v\n", i, incomingMsg)
+
+		fmt.Printf("parsed msg \n %v\n", parser.ParseMsg(incomingMsg))
+		i++
+	}
 
 	return connection, err
-}
-
-
-func Listen() {
-	sever, err := net.Listen("tcp", ":"+strconv.Itoa(utils.PORT))
-	println("eer")
-
-	for {
-		if err == nil {
-			connection, connErr := sever.Accept()
-
-			println("newPeer\n")
-
-			if connErr == nil {
-				go handleNewPeer(connection)
-			}
-
-		} else {
-			println("eer")
-			log.Fatal(err)
-		}
-
-	}
-}
-func handleNewPeer(conn net.Conn) {
-
-	mLen := 0
-		b := make([]byte, 150)
-		mLen, _ = bufio.NewReader(conn).Read(b)
-		fmt.Printf("%v\n", conn.RemoteAddr().String())
-		fmt.Printf("read %v msg from : %v\n", mLen, b)
-
 }

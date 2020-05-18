@@ -12,6 +12,7 @@ import (
 
 const DEBUG = true
 const PORT = 6881
+const PORT2 = 6882
 const UpFlag = "up"
 
 var LocalAddr, _ =  net.ResolveTCPAddr("tcp",LocalAddress().String()+":"+strconv.Itoa(PORT))
