@@ -7,6 +7,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"time"
 	"torrent/parser"
 )
 
@@ -16,7 +17,11 @@ const PORT2 = 6882
 const UpFlag = "up"
 
 var LocalAddr, _ =  net.ResolveTCPAddr("tcp",LocalAddress().String()+":"+strconv.Itoa(PORT))
+var LocalAddr2, _ =  net.ResolveTCPAddr("tcp",":"+strconv.Itoa(PORT))
 var MyID = parser.GetRandomId()
+
+var KeepAlliveDuration, _ = time.ParseDuration("120s")
+
 
 
 func Debugln(st string){

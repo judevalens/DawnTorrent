@@ -8,9 +8,9 @@ func main() {
   torrent := NewTorrent(torrentPath)
 
 
-  _ , _ = torrent.Peers[0].connectTo(torrent)
+ go torrent.Peers[4].connectTo(torrent)
 
- ////// torrent.Listen()
+  torrent.Listen()
 
 
 

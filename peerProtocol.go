@@ -26,8 +26,7 @@ type Torrent struct {
 	TorrentFile     *parser.Dict
 	Peers           []*Peer
 
-	incomingCon map[string]*Peer
-	outgoingCon map[string]*Peer
+	Pieces 			*Piece
 
 	activeConnection map[string]*Peer
 }
@@ -127,12 +126,12 @@ func (torrent *Torrent) TrackerRequest(event string) {
 }
 
 func (torrent *Torrent) Listen() {
-	sever, err := net.Listen("tcp", ":"+strconv.Itoa(utils.PORT))
-	println("eer")
+	sever, err := net.ListenTCP("tcp", utils.LocalAddr2)
+	fmt.Printf("Listenning on %v\n",sever.Addr().String())
 
 	for {
 		if err == nil {
-			connection, connErr := sever.Accept()
+			connection, connErr := sever.AcceptTCP()
 
 			println("newPeer\n")
 
@@ -148,13 +147,46 @@ func (torrent *Torrent) Listen() {
 	}
 }
 
-func (torrent *Torrent) handleNewPeer(conn net.Conn) {
-	mLen := 0
-	b := make([]byte, 68)
-	mLen, _ = bufio.NewReader(conn).Read(b)
-	fmt.Printf("read %v msg from %v : %v\n", mLen, conn.RemoteAddr(), b)
+func (torrent *Torrent) handleNewPeer(connection *net.TCPConn) {
+	println("---------------------------------")
+	_ = connection.SetKeepAlive(true)
+	_ = connection.SetKeepAlivePeriod(utils.KeepAlliveDuration)
 
-	_, _ = parser.ParseHandShake(b, torrent.TorrentFile.MapString["infoHash"])
+	mLen := 0
+	handShakeMsg := make([]byte, 68)
+	mLen, readFromConn := bufio.NewReader(connection).Read(handShakeMsg)
+	fmt.Printf("read %v msg from %v : %v\n", mLen, connection.RemoteAddr(), handShakeMsg)
+
+	_, handShakeErr := parser.ParseHandShake(handShakeMsg, torrent.TorrentFile.MapString["infoHash"])
+
+	if handShakeErr != nil{
+		fmt.Printf("%v \n closing connection \n",handShakeErr)
+		_ = connection.Close()
+
+
+	}
+
+
+	n, writeErr := connection.Write(parser.GetMsg(parser.MSG{MsgID: parser.HandShakeMsg,InfoHash:[]byte(torrent.TorrentFile.MapString["infoHash"]),MyPeerID:utils.MyID}))
+
+	fmt.Printf("wrote %v byte to %v with %v err", n,connection.RemoteAddr().String(),writeErr)
+	i := 0
+	for readFromConn == nil{
+
+		incomingMsg := make([]byte,500)
+		_, readFromConn = bufio.NewReader(connection).Read(incomingMsg)
+	//	fmt.Printf("new msg # %v : %v\n", i, string(incomingMsg))
+
+	//	fmt.Printf("new msg byte # %v : %v\n", i, incomingMsg)
+
+		parsedMsg := parser.ParseMsg(incomingMsg)
+
+		fmt.Printf("parsed msg \n msg ID %v LEN %v\n", parsedMsg.MsgID,parsedMsg.MsgLen)
+		i++
+	}
+
+	println("---------------------------------")
+
 
 }
 
@@ -218,7 +250,7 @@ func (peer *Peer) connectTo(torrent *Torrent) (*net.TCPConn, error) {
 	println("---------------------------------")
 	fmt.Printf("Remote Addr %v \n", remotePeerAddr)
 
-	msg := parser.MSG{MsgID: parser.HandShakeMsg, InfoHash: []byte(torrent.TorrentFile.MapString["infoHash"])}
+	msg := parser.MSG{MsgID: parser.HandShakeMsg, InfoHash: []byte(torrent.TorrentFile.MapString["infoHash"]), MyPeerID:utils.MyID}
 	nByteWritten, writeErr := connection.Write(parser.GetMsg(msg))
 	fmt.Printf("write %v bytes with %v err\n", nByteWritten, writeErr)
 
@@ -231,23 +263,39 @@ func (peer *Peer) connectTo(torrent *Torrent) (*net.TCPConn, error) {
 
 	if handShakeErr == nil && readFromConError == nil {
 		torrent.activeConnection[remotePeerAddr.String()] = peer
+	}else{
+		log.Fatal("handshake Error")
+		return nil,nil
 	}
 
 	println("---------------------------------")
 
 	i := 0
+	_, _ = connection.Write(parser.GetMsg(parser.MSG{MsgID: parser.UnchockeMsg}))
 
 	for readFromConError == nil {
 		incomingMsg := make([]byte, 500)
 
 		_, readFromConError = bufio.NewReader(connection).Read(incomingMsg)
 
-		fmt.Printf("new msg # %v : %v\n", i, string(incomingMsg))
-		fmt.Printf("new msg byte # %v : %v\n", i, incomingMsg)
+		parsedMsg := parser.ParseMsg(incomingMsg)
 
-		fmt.Printf("parsed msg \n %v\n", parser.ParseMsg(incomingMsg))
+		fmt.Printf("parsed msg \n msg ID %v LEN %v\n", parsedMsg.MsgID,parsedMsg.MsgLen)
+
+
+
 		i++
 	}
 
 	return connection, err
+}
+
+
+type Piece struct{
+
+	infoHash string
+	pieceLen int
+	subPieceLen int
+	subPiece [][]byte
+
 }

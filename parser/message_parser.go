@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"log"
 	"math"
 	//	"strconv"
 	//"encoding/binary"
@@ -155,18 +154,18 @@ func ParseHandShake(msg []byte, infoHash string) (MSG, error) {
 			} else {
 				err = errors.New("handshake \n bad info hash")
 
-				log.Fatal("infoHash Failed")
+				fmt.Printf("%v\n",err)
 			}
 
 		} else {
 			err = errors.New("handshake \n wrong protocol")
 
-			log.Fatal("identifier failed")
+			fmt.Printf("%v\n",err)
 		}
 	} else {
 		err = errors.New("handshake \n wrong protocol")
 
-		log.Fatal("id failed")
+		fmt.Printf("%v\n",err)
 	}
 
 	return msgStruct, err
