@@ -1,27 +1,57 @@
 package utils
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"fmt"
 	upnp "github.com/huin/goupnp/dcps/internetgateway1"
 	"log"
+	"math/rand"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 	"time"
-	"torrent/parser"
 )
 
 const DEBUG = true
 const PORT = 6881
-const PORT2 = 6882
+const PORT2 = 6884
 const UpFlag = "up"
 
-var LocalAddr, _ =  net.ResolveTCPAddr("tcp",LocalAddress().String()+":"+strconv.Itoa(PORT))
+var LocalAddr, _ =  net.ResolveTCPAddr("tcp",LocalAddress().String()+":"+strconv.Itoa(PORT2))
 var LocalAddr2, _ =  net.ResolveTCPAddr("tcp",":"+strconv.Itoa(PORT))
-var MyID = parser.GetRandomId()
+var MyID = GetRandomId()
 
-var KeepAlliveDuration, _ = time.ParseDuration("120s")
+var KeepAliveDuration, _ = time.ParseDuration("120s")
 
+
+var homeDir, _ = os.UserHomeDir()
+
+var	DawnTorrentHomeDir = homeDir + "/DawnTorrent"
+
+func GetRandomId() string {
+	PeerIDLength := 20
+
+	randomSeed := rand.New(rand.NewSource(time.Now().UnixNano()))
+	peerIDRandom := randomSeed.Perm(PeerIDLength)
+
+	fmt.Printf("%v", peerIDRandom)
+	var peerIDRandomArr []byte
+	var peerId string
+
+	for _, n := range peerIDRandom {
+		fmt.Printf("%v\n", n)
+		peerIDRandomArr = append(peerIDRandomArr, byte(n))
+	}
+
+	x := (PeerIDLength * PeerIDLength) / hex.EncodedLen(PeerIDLength)
+
+	peerIDRandomSha := sha1.Sum(peerIDRandomArr)
+	peerIDRandomShaSlice := peerIDRandomSha[:x]
+	peerId = hex.EncodeToString(peerIDRandomShaSlice)
+	return peerId
+}
 
 
 func Debugln(st string){
