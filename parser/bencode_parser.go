@@ -1,7 +1,6 @@
 package parser
 
 import (
-	"fmt"
 	"io/ioutil"
 	"log"
 	"strconv"
@@ -102,106 +101,6 @@ func ReadFile(path string) []byte {
 	}
 	return file
 }
-
-/*
-func decode(file []byte, offset int) {
-	//dict := Dict{}
-
-	contentLength := 0
-	//fileLength := len(file)
-	fmt.Printf("FILE LENGTH")
-
-	for offset < len(file) {
-		fmt.Printf("FILE LENGTH %v OFFSET %v\n", len(file), offset)
-
-		s, delimiter := getInfo(file, offset)
-		totalBytesRead := len(s)
-
-		fmt.Printf("\n%s\n", s)
-		dataType := s[:delimiter]
-		println("Delimiter %v", delimiter)
-		contentLength, _ = strconv.Atoi(strings.Join(s[delimiter:totalBytesRead-1], ""))
-		fmt.Printf("type %s length %v\n", dataType, contentLength)
-
-		for i, v := range dataType {
-			var del Delimiter
-
-			if v == Bdictionnary || v == Blist || v == Bnumber {
-
-				if i == len(dataType)-1 {
-					//content := file[offset:contentLength]
-					del.delType = v
-
-				} else {
-
-					del = Delimiter{delType: v}
-				}
-
-				openDel.PushBack(del)
-				closing.PushFront(del)
-			}
-
-		}
-		offset += totalBytesRead + contentLength
-
-	}
-
-	println("-----------------------------------\n")
-
-	del := openDel.Front()
-
-	for del != nil {
-		fmt.Printf("%v\n", del.Value.(Delimiter).delType)
-
-		del = del.Next()
-	}
-
-	del = closing.Front()
-
-	for del != nil {
-		fmt.Printf("PREV %v\n", del.Value.(Delimiter).delType)
-		del = del.Next()
-	}
-
-}
-
-func getInfo(file []byte, offset int) ([]string, int) {
-	var ch string
-	seq := make([]string, 0)
-	delimiter := 0
-	isNumber := false
-	for ch != ":" && offset < len(file) {
-
-		ch = string(file[offset])
-		seq = append(seq, ch)
-
-		if strings.Contains("dlie", ch) && ch != "" {
-			println("del %v", ch)
-			delimiter++
-
-			if ch == "i" {
-				isNumber = true
-			}
-			if ch == "e" {
-				isNumber = false
-			}
-		} else {
-			if isNumber {
-				delimiter++
-			}
-		}
-
-		offset++
-	}
-
-	// fixed a small issue
-	// there's probably a more elegant way to solve it :)
-	if offset >= len(file) {
-		seq = append(seq, ":")
-	}
-	return seq, delimiter
-}
-*/
 func getField(file []byte, pos int, dtype byte) ([]string, int, byte) {
 	var ch string
 	var field byte
@@ -209,7 +108,7 @@ func getField(file []byte, pos int, dtype byte) ([]string, int, byte) {
 	seq := make([]string, 0)
 	_ = 0
 	_ = false
-	fmt.Printf("dtype %v\n", string(dtype))
+//	fmt.Printf("dtype %v\n", string(dtype))
 
 	counter := 0
 	for counter < 2 {
@@ -226,7 +125,7 @@ func getField(file []byte, pos int, dtype byte) ([]string, int, byte) {
 		numberS := ""
 
 		for ch != "d" && ch != "l" && ch != ":" && !isEnd {
-			println("char in at pos " + strconv.Itoa(pos) + " " + ch)
+		//	println("char in at pos " + strconv.Itoa(pos) + " " + ch)
 
 			if ch == "i" {
 				isNumber = true
@@ -258,14 +157,14 @@ func getField(file []byte, pos int, dtype byte) ([]string, int, byte) {
 		if ch == ":" {
 			length, _ := strconv.Atoi(lengthS)
 			pos++
-			println("LENGTH " + lengthS)
+		//	println("LENGTH " + lengthS)
 			content := string(file[pos : pos+length])
-			println("content " + content)
+		//	println("content " + content)
 
 			seq = append(seq, content)
 			pos = pos + length
 		} else if isNumber {
-			println("NUMBER " + numberS)
+	//		println("NUMBER " + numberS)
 
 			seq = append(seq, numberS)
 			pos++
@@ -321,10 +220,10 @@ func Parse(dict *Dict, file []byte, pos int) Result {
 				dict.DataList = append(dict.DataList, containerInfo)
 				dict.MapString[data[0]] = data[1]
 
-				println("key " + data[0])
-				println("value " + data[1])
-				println("adding string  dict")
-				println("Field " + string(field))
+			//	println("key " + data[0])
+			///	println("value " + data[1])
+			//	println("adding string  dict")
+			//	println("Field " + string(field))
 			} else if field == 'l' {
 
 				result := Parse(dict, file, position)
@@ -334,9 +233,9 @@ func Parse(dict *Dict, file []byte, pos int) Result {
 				dict.DataList = append(dict.DataList, containerInfo)
 				position = result.position
 				position++
-				println("key " + data[0])
-				println("adding list to dict")
-				println("Field " + string(field))
+			//	println("key " + data[0])
+			//	println("adding list to dict")
+			//	println("Field " + string(field))
 			} else if field == 'd' {
 
 				dict.DataList = append(dict.DataList, containerInfo)
@@ -350,9 +249,9 @@ func Parse(dict *Dict, file []byte, pos int) Result {
 				dict.MapDict[data[0]] = result.dict
 				dict.KeyInfo = containerInfo
 
-				println("position " + strconv.Itoa(position))
-				println("adding dict to dict")
-				println("Field " + string(field))
+			//	println("position " + strconv.Itoa(position))
+			///	println("adding dict to dict")
+			/////	println("Field " + string(field))
 
 			}
 			if file[position] == 'e' {
@@ -385,8 +284,8 @@ func Parse(dict *Dict, file []byte, pos int) Result {
 				containerInfo.dType = "s"
 				dList.DataList = append(dList.DataList,containerInfo)
 				dList.LString = append(dList.LString, data[0])
-				println("adding string to list")
-				println("Field " + string(field))
+			//	println("adding string to list")
+			//	println("Field " + string(field))
 
 			} else if field == 'l' {
 				containerInfo.dType = "l"
@@ -399,8 +298,8 @@ func Parse(dict *Dict, file []byte, pos int) Result {
 				dList.LList = append(dList.LList, result.dList)
 				position = result.position
 				position++
-				println("adding list to list")
-				println("Field " + string(field))
+			//	println("adding list to list")
+			//	println("Field " + string(field))
 			} else if field == 'd' {
 				containerInfo.dType = "d"
 				dList.DataList = append(dList.DataList,containerInfo)
@@ -412,8 +311,8 @@ func Parse(dict *Dict, file []byte, pos int) Result {
 				dList.LDict = append(dList.LDict, result.dict)
 				position = result.position
 				position++
-				println("adding dict to list")
-				println("Field " + string(field))
+			//	println("adding dict to list")
+			//	println("Field " + string(field))
 			}
 			if file[position] == 'e' {
 				EOL = true

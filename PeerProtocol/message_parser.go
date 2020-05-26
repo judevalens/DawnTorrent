@@ -6,12 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"os"
+
 	//	"strconv"
 	//"encoding/binary"
 )
 
 const (
-	HandShakeMsg    = 10
+	HandShakeMsgID  = 19
 	ChockeMsg       = 0
 	UnchockeMsg     = 1
 	InterestedMsg   = 2
@@ -56,20 +58,35 @@ type MSG struct {
 	availablePiece []bool
 	InfoHash       []byte
 	MyPeerID       string
-	PeerID 		int
+	Sender  		*Peer
+}
+
+type HandShakeMsg struct{
+	MsgID          uint64
+	MsgLen         uint64
+	reservedBytes []byte
+	InfoHash       []byte
+	peerIp 			string
+	peerPort		string
+	peerID			string
+	rawMsg			[]byte
+	protocolIdentifier []byte
 }
 
 func GetMsg(msg MSG) []byte {
 	var msgByte = make([]byte, 0)
 	switch msg.MsgID {
 
-	case HandShakeMsg:
+	case HandShakeMsgID:
 		infoHashByte := []byte(msg.InfoHash)
 		peerIDByte := []byte(msg.MyPeerID)
 
 		msgByte = bytes.Join([][]byte{HandShakePrefixLength, ProtocolIdentifier, BitTorrentReservedByte, infoHashByte, peerIDByte}, []byte(""))
 	case RequestMsg:
-		msgByte = bytes.Join([][]byte{requestMsgLen, intToByte(int(msg.MsgID), 1), intToByte(int(msg.PieceIndex), 4), intToByte(int(msg.BeginIndex), 4), intToByte(int(msg.PieceLen), 4)}, []byte(""))
+
+		msgByte = bytes.Join([][]byte{intToByte(int(13), 4), intToByte(int(msg.MsgID), 1), intToByte(int(msg.PieceIndex), 4), intToByte(int(msg.BeginIndex), 4), intToByte(int(msg.PieceLen), 4)}, []byte(""))
+		println(len(msgByte))
+		println("len")
 	case CancelMsg:
 		msgByte = bytes.Join([][]byte{requestMsgLen, intToByte(int(msg.MsgID), 1), intToByte(int(msg.PieceIndex), 4), intToByte(int(msg.BeginIndex), 4), intToByte(int(msg.PieceLen), 4)}, []byte(""))
 	case PieceMsg:
@@ -77,6 +94,10 @@ func GetMsg(msg MSG) []byte {
 	case HaveMsg:
 		msgByte = bytes.Join([][]byte{intToByte(5, 4), intToByte(int(msg.MsgID), 1), intToByte(int(msg.PieceIndex), 4)}, []byte(""))
 	default:
+		if msg.MsgID == RequestMsg{
+			os.Exit(3039)
+
+		}
 		idByte := make([]byte, 1)
 		binary.PutUvarint(idByte, msg.MsgID)
 		msgByte = bytes.Join([][]byte{chokeMsgLen, intToByte(int(msg.MsgID), 1)}, []byte(""))
@@ -90,50 +111,61 @@ func GetMsg(msg MSG) []byte {
 	return msgByte
 }
 
-func ParseMsg(msg []byte, torrent *Torrent) MSG {
+func ParseMsg(msg []byte,peer *Peer) (MSG,error) {
 	msgStruct := MSG{}
+	var err error
+
+	msgStruct.Sender = peer
 
 	msgStruct.MsgLen = binary.BigEndian.Uint32(msg[0:4])
 	msgStruct.MsgID, _ = binary.Uvarint(msg[4:5])
 
 	fmt.Printf("MsgLen %v MsgID %v ", msgStruct.MsgLen, msgStruct.MsgID)
 
-	switch msgStruct.MsgID {
-	case BitfieldMsg:
-		msgStruct.PieceLen = uint32(math.Abs(float64(msgStruct.MsgLen - binary.BigEndian.Uint32(BitFieldMsgLen))))
-		fmt.Printf("piece Len %v\n", msgStruct.PieceLen)
-		msgStruct.BitfieldRaw = msg[5 : msgStruct.PieceLen+5]
-	case RequestMsg:
-		msgStruct.PieceIndex = binary.BigEndian.Uint32(msg[5:9])
-		msgStruct.BeginIndex = binary.BigEndian.Uint32(msg[9:13])
-		msgStruct.PieceLen = binary.BigEndian.Uint32(msg[13:17])
-	case PieceMsg:
-		msgStruct.PieceIndex = binary.BigEndian.Uint32(msg[5:9])
-		msgStruct.BeginIndex = binary.BigEndian.Uint32(msg[9:13])
-		msgStruct.PieceLen = uint32(math.Abs(float64(msgStruct.MsgLen - binary.BigEndian.Uint32(pieceLen))))
-		msgStruct.Piece = msg[17 : msgStruct.PieceLen+17]
-	case HaveMsg:
-		msgStruct.PieceIndex = binary.BigEndian.Uint32(msg[5:9])
-	case CancelMsg:
-		msgStruct.PieceIndex = binary.BigEndian.Uint32(msg[5:9])
-		msgStruct.BeginIndex = binary.BigEndian.Uint32(msg[9:13])
-		msgStruct.PieceLen = binary.BigEndian.Uint32(msg[13:17])
+	if int(msgStruct.MsgLen) <= len(msg) {
+		switch msgStruct.MsgID {
+		case BitfieldMsg:
+			msgStruct.PieceLen = uint32(math.Abs(float64(msgStruct.MsgLen - binary.BigEndian.Uint32(BitFieldMsgLen))))
+			fmt.Printf("piece Len %v\n", msgStruct.PieceLen)
+			msgStruct.BitfieldRaw = msg[5 : msgStruct.PieceLen+5]
+		case RequestMsg:
+			msgStruct.PieceIndex = binary.BigEndian.Uint32(msg[5:9])
+			msgStruct.BeginIndex = binary.BigEndian.Uint32(msg[9:13])
+			msgStruct.PieceLen = binary.BigEndian.Uint32(msg[13:17])
+		case PieceMsg:
+			msgStruct.PieceIndex = binary.BigEndian.Uint32(msg[5:9])
+			msgStruct.BeginIndex = binary.BigEndian.Uint32(msg[9:13])
+			msgStruct.PieceLen = uint32(math.Abs(float64(msgStruct.MsgLen - binary.BigEndian.Uint32(pieceLen))))
+			msgStruct.Piece = msg[17 : msgStruct.PieceLen+17]
+		case HaveMsg:
+			msgStruct.PieceIndex = binary.BigEndian.Uint32(msg[5:9])
+		case CancelMsg:
+			msgStruct.PieceIndex = binary.BigEndian.Uint32(msg[5:9])
+			msgStruct.BeginIndex = binary.BigEndian.Uint32(msg[9:13])
+			msgStruct.PieceLen = binary.BigEndian.Uint32(msg[13:17])
+			// default msg -> interested,choke
+		}
+	}else {
+		// TODO provides more accurate explanation
+		// I will have to be more accurate later
+		err = errors.New("wrong msg len")
 	}
 
-	return msgStruct
+	return msgStruct,err
 }
 
-func ParseHandShake(msg []byte, infoHash string) (MSG, error) {
-	msgStruct := MSG{}
+func ParseHandShake(msg []byte, infoHash string) (HandShakeMsg, error) {
+	msgStruct := HandShakeMsg{}
 	var err error = nil
 	println("new Handshake")
 	println(msg)
+
+
 	if string(msg[0:1]) == string(HandShakePrefixLength) {
 		if string(msg[1:20]) == string(ProtocolIdentifier) {
 			fmt.Printf("info hash : %v\n", msg[28:48])
 			if string(msg[28:48]) == infoHash {
-				msgStruct.MsgID = HandShakeMsg
-				msgStruct.rawMsg = msg
+
 			} else {
 				err = errors.New("handshake \n bad info hash")
 
@@ -149,6 +181,13 @@ func ParseHandShake(msg []byte, infoHash string) (MSG, error) {
 		err = errors.New("handshake \n wrong protocol")
 
 		fmt.Printf("%v\n", err)
+	}
+
+	if err == nil{
+		msgStruct.MsgLen, _ = binary.Uvarint(msg[0:1])
+		msgStruct.MsgID = HandShakeMsgID
+		msgStruct.InfoHash =  msg[28:48]
+		ProtocolIdentifier = msg[1:20]
 	}
 
 	return msgStruct, err

@@ -1,16 +1,15 @@
 package main
 
 import (
-	"sync"
 	"torrent/PeerProtocol"
 )
 
 func main() {
+	done := make(chan bool)
 
-	waiting := new(sync.WaitGroup)
-	torrentPath := "files/ubuntu-20.04-live-server-amd64.iso.torrent"
-	waiting.Add(1)
-	torrent := PeerProtocol.NewTorrent(torrentPath)
-	torrent.Listen()
-	waiting.Wait()
+	torrentPath := "files/ubuntu-20.04-desktop-amd64.iso.torrent"
+	torrent := PeerProtocol.NewTorrent(torrentPath,done)
+	//go torrent.RequestQueueManager()
+	_=torrent
+	<-done
 }
