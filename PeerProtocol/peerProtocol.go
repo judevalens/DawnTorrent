@@ -2,15 +2,12 @@ package PeerProtocol
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
-	binaryHeap "github.com/emirpasic/gods/trees/binaryheap"
 	"log"
 	"math"
 	"math/rand"
 	"os"
 	"sort"
-	"sync"
 	"sync/atomic"
 	"time"
 	"torrent/parser"
@@ -23,47 +20,42 @@ const (
 	completedEvent = "completed"
 	SubPieceLen    = 16000
 	pieceHashLen   = 20
+	priority1      = 0
+	priority2      = -1
+	priority3      = -2
+	incomingMsg    = 1
+	outgoingMsg    = -1
 )
 
 type Torrent struct {
-	TrackerResponse   *parser.Dict
-	torrentMetaInfo   *parser.Dict
-	PeerSwarm         *PeerSwarm
-	File              *torrentFile
-	RequestQueue      *binaryHeap.Heap
-	incomingMsgQueue  *binaryHeap.Heap
-	blockRequestQueue sync.WaitGroup
-	requestQueueMutex sync.Mutex
-	requestQueueAtomic  *int32
-	RequestQueueBlockMutex sync.Mutex
-	incomingMsgQueueAtomic *int32
-	incomingMsgQueueMutex *int32
+	TrackerResponse *parser.Dict
+	torrentMetaInfo *parser.Dict
+	PeerSwarm       *PeerSwarm
+	File            *torrentFile
 
+	requestQueue     *Queue
+	incomingMsgQueue *Queue
 
 	done chan bool
 }
 
-func NewTorrent(torrentPath string,done chan bool) *Torrent {
+func NewTorrent(torrentPath string, done chan bool) *Torrent {
+
 	torrent := new(Torrent)
-	torrent.RequestQueue = binaryHeap.NewWith(requestQueueComparator)
-	torrent.requestQueueAtomic= new(int32)
-	atomic.AddInt32(torrent.requestQueueAtomic,0)
-	torrent.incomingMsgQueue = binaryHeap.NewWith(requestQueueComparator)
-
-	torrent.incomingMsgQueueAtomic= new(int32)
-	atomic.AddInt32(torrent.incomingMsgQueueAtomic,0)
-
-	torrent.File = NewFile(torrent,torrentPath)
+	torrent.File = NewFile(torrent, torrentPath)
 	println("torrent.File.infoHash")
 	println(torrent.File.infoHash)
 	torrent.PeerSwarm = NewPeerSwarm(torrent)
+	torrent.requestQueue = NewQueue(torrent)
+	torrent.incomingMsgQueue = NewQueue(torrent)
+	torrent.requestQueue.Run(4)
+	torrent.incomingMsgQueue.Run(4)
 
-	torrent.worker()
-	torrent.SelectPiece()
+	//torrent.worker()
+	go torrent.SelectPiece()
+
 	return torrent
 }
-
-
 
 func (torrent *Torrent) TitForTat() {
 
@@ -78,24 +70,20 @@ func (torrent *Torrent) TitForTat() {
 		i := 0
 		var peer *Peer
 		for numUnchockedPeer < 3 {
-			isPresent := false
-			for !isPresent && i < len(torrent.PeerSwarm.Peers) {
-				peerIndex := torrent.PeerSwarm.SortedPeersIndex[(len(torrent.PeerSwarm.SortedPeersIndex) - 1 - i)]
-				peer = torrent.PeerSwarm.Peers[peerIndex]
-				_, isPresent = torrent.PeerSwarm.interestedPeerMap[peer.id]
+			isPeerInterested := false
+			for !isPeerInterested && i < int(atomic.LoadInt32(torrent.PeerSwarm.nActiveConnection)) {
+				peer = torrent.PeerSwarm.GetPeerByDownloadRate(numUnchockedPeer)
+				isPeerInterested = peer.interested
 				i++
 			}
-			torrent.PeerSwarm.peerMutex.Lock()
+			torrent.PeerSwarm.peerMutex.RLock()
 
 			if peer != nil {
-				delete(torrent.PeerSwarm.interestedPeerMap, peer.id)
-				if torrent.PeerSwarm.unChockedPeer[numUnchockedPeer] != nil {
-					torrent.PeerSwarm.unChockedPeer[numUnchockedPeer].updateState(true, true, torrent)
-				}
+				torrent.PeerSwarm.unChockedPeer[numUnchockedPeer].chocked = true
 				torrent.PeerSwarm.unChockedPeer[numUnchockedPeer] = peer
 				torrent.PeerSwarm.unChockedPeer[numUnchockedPeer].chocked = false
 			}
-			torrent.PeerSwarm.peerMutex.Unlock()
+			torrent.PeerSwarm.peerMutex.RUnlock()
 
 			i++
 			numUnchockedPeer++
@@ -138,7 +126,7 @@ func (torrent *Torrent) TitForTat() {
 func (torrent *Torrent) SelectPiece() {
 	for {
 
-		if  torrent.File.currentPiece == nil || torrent.File.currentPiece.Status == "complete"{
+		if torrent.File.currentPiece == nil || torrent.File.currentPiece.Status == "complete" {
 			if torrent.File.behavior == "random" {
 
 				randomSeed := rand.New(rand.NewSource(time.Now().UnixNano()))
@@ -151,30 +139,38 @@ func (torrent *Torrent) SelectPiece() {
 						break
 					}
 				}
-			}else if torrent.File.behavior == "rarest" {
+			} else if torrent.File.behavior == "rarest" {
 				torrent.File.sortPieces()
-				rarestPieceIndex   := torrent.File.SortedAvailability[torrent.File.nPiece-1]
+				rarestPieceIndex := torrent.File.SortedAvailability[torrent.File.nPiece-1]
+				torrent.File.PiecesMutex.RLock()
 				torrent.File.currentPiece = torrent.File.Pieces[rarestPieceIndex]
+				torrent.File.PiecesMutex.RUnlock()
+
 			}
 			torrent.File.currentPiece.Status = "inProgress"
-
 		}
 		if torrent.File.currentPiece.Status == "inProgress" {
-			for i,_ := range torrent.File.currentPiece.SubPieces{
+			for i, _ := range torrent.File.currentPiece.SubPieces {
 				if len(torrent.File.currentPiece.SubPieces[i]) == 0 {
-					for _, o := range torrent.File.currentPiece.owners{
-						if !o.peerChocking{
-							println(torrent.File.currentPiece.SubPieceLen)
-							println(i*torrent.File.currentPiece.SubPieceLen)
-							println(torrent.File.fileLen)
-							msg := MSG{MsgID: RequestMsg,PieceIndex: uint32(torrent.File.currentPiece.PieceIndex),BeginIndex: uint32(i*torrent.File.SubPieceLen),PieceLen: uint32(torrent.File.SubPieceLen)}
-							req :=Request{msg: GetMsg(msg),Peer: o,Priority: 2}
-							torrent.AddRequest(req)
 
-							fmt.Printf("owner %v \nsub_index %v index %v beginIndex %v len %v\n",o.id,i, torrent.File.currentPiece.PieceIndex,i*torrent.File.SubPieceLen,torrent.File.SubPieceLen)
+					torrent.PeerSwarm.activeConnectionMutex.Lock()
+
+					for _, o := range torrent.PeerSwarm.activeConnection.Values() {
+
+						msg := MSG{MsgID: RequestMsg, PieceIndex: uint32(torrent.File.currentPiece.PieceIndex), BeginIndex: uint32(i * torrent.File.SubPieceLen), PieceLen: uint32(torrent.File.SubPieceLen)}
+						p, found := torrent.PeerSwarm.activeConnection.Get(o.(string))
+
+						if found {
+							_, _ = p.(*Peer).connection.Write(GetMsg(MSG{MsgID: InterestedMsg}, p.(*Peer)).rawMsg)
+
+							_, _ = p.(*Peer).connection.Write(GetMsg(msg, p.(*Peer)).rawMsg)
 						}
+						fmt.Printf("owner %v \nsub_index %v index %v beginIndex %v len %v\n", p.(*Peer).id, i, torrent.File.currentPiece.PieceIndex, i*torrent.File.SubPieceLen, torrent.File.SubPieceLen)
+
 					}
-			break
+					torrent.PeerSwarm.activeConnectionMutex.RUnlock()
+
+					//break
 				}
 
 			}
@@ -182,7 +178,7 @@ func (torrent *Torrent) SelectPiece() {
 		}
 		/// change the states here
 
-		if len(torrent.File.completedPieceIndex) > 4{
+		if len(torrent.File.completedPieceIndex) > 4 {
 			torrent.File.behavior = "rarest"
 		}
 		time.Sleep(time.Second)
@@ -194,6 +190,7 @@ func (torrent *Torrent) msgRouter(msg MSG) {
 
 	switch msg.MsgID {
 	case BitfieldMsg:
+		fmt.Printf("%v", msg.BitfieldRaw)
 		// gotta check that bitfield is the correct len
 		bitfieldCorrectLen := int(math.Ceil(float64(torrent.File.nPiece) / 8.0))
 		counter := 0
@@ -201,46 +198,42 @@ func (torrent *Torrent) msgRouter(msg MSG) {
 
 			pieceIndex := 0
 
-			for i := 0; i < len(torrent.File.Pieces) ; i+=8 {
+			for i := 0; i < len(torrent.File.Pieces); i += 8 {
 				bitIndex := 7
-				currentByte:= msg.BitfieldRaw[i/8]
-				for bitIndex >= 0 && pieceIndex < len(torrent.File.Pieces){
+				currentByte := msg.BitfieldRaw[i/8]
+				for bitIndex >= 0 && pieceIndex < len(torrent.File.Pieces) {
 					counter++
 					currentBit := uint8(math.Exp2(float64(bitIndex)))
 					bit := currentByte & currentBit
 
 					isPieceAvailable := bit != 0
-					torrent.File.PiecesMutex.Lock()
 					torrent.PeerSwarm.peerMutex.Lock()
 
 					//TODO if a peer is removed, it is a problem if we try to access it
 					// need to add verification that the peer is still in the map
-					_, isPresent := torrent.PeerSwarm.PeersMap[msg.Sender.id]
-
+					peer, isPresent := torrent.PeerSwarm.PeersMap.Get(msg.Peer.id)
 					if isPresent {
-						torrent.PeerSwarm.PeersMap[msg.Sender.id].AvailablePieces[pieceIndex] = isPieceAvailable
+						peer.(*Peer).AvailablePieces[pieceIndex] = isPieceAvailable
 					}
 					torrent.PeerSwarm.peerMutex.Unlock()
+					fmt.Printf("piece index %v is %v for byte %v \n", pieceIndex, isPieceAvailable, currentByte)
+
 					if isPieceAvailable {
+						torrent.File.PiecesMutex.Lock()
 						torrent.File.Pieces[pieceIndex].Availability++
 						if torrent.File.Pieces[pieceIndex].Status != "complete" {
-							torrent.File.Pieces[pieceIndex].owners[msg.Sender.id] = msg.Sender
+							torrent.File.Pieces[pieceIndex].owners[msg.Peer.id] = msg.Peer
+
+							torrent.PeerSwarm.peerMutex.Lock()
+							if !msg.Peer.peerIsInteresting {
+								msg.Peer.peerIsInteresting = true
+								torrent.requestQueue.Add(GetMsg(MSG{MsgID: InterestedMsg}, msg.Peer))
+
+							}
+							torrent.PeerSwarm.peerMutex.Unlock()
 						}
 						torrent.File.PiecesMutex.Unlock()
 
-
-						torrent.PeerSwarm.interestingPeerMutex.Lock()
-						_, isPresent := torrent.PeerSwarm.interestingPeer[msg.Sender.id]
-						_, isPieceNeeded := torrent.File.neededPieceMap[pieceIndex]
-						if !isPresent && isPieceNeeded{
-							torrent.PeerSwarm.interestingPeer[msg.Sender.id] = msg.Sender
-							requestMsg := GetMsg(MSG{MsgID: InterestedMsg})
-							torrent.AddRequest(Request{msg: requestMsg, Peer: msg.Sender, Priority: 2})
-
-							requestMsg2 := GetMsg(MSG{MsgID: UnchockeMsg})
-							torrent.AddRequest(Request{msg: requestMsg2, Peer: msg.Sender, Priority: 3})
-						}
-						torrent.PeerSwarm.interestingPeerMutex.Unlock()
 					}
 					pieceIndex++
 					bitIndex--
@@ -249,12 +242,24 @@ func (torrent *Torrent) msgRouter(msg MSG) {
 			}
 		}
 	case InterestedMsg:
-		msg.Sender.updateState(msg.Sender.chocked,true,torrent)
+		msg.Peer.updateState(msg.Peer.chocked, true, torrent)
 	case UnchockeMsg:
-		msg.Sender.peerChocking = false
-	case ChockeMsg:
-		msg.Sender.peerChocking = true
+		msg.Peer.peerIsChocking = false
 	case PieceMsg:
+		_ = torrent.addSubPiece(msg, msg.Peer)
+		////////////os.Exit(7887)
+	case ChockedMsg:
+		msg.Peer.peerIsChocking = true
+
+	case HaveMsg:
+		torrent.File.PiecesMutex.Lock()
+		torrent.File.Pieces[msg.PieceIndex].Availability++
+		if torrent.File.Pieces[msg.PieceIndex].Status != "complete" {
+			torrent.PeerSwarm.peerMutex.Lock()
+			torrent.File.Pieces[msg.PieceIndex].owners[msg.Peer.id] = msg.Peer
+			torrent.PeerSwarm.peerMutex.Unlock()
+		}
+		torrent.File.PiecesMutex.Unlock()
 	}
 
 }
@@ -266,28 +271,18 @@ func (torrent *Torrent) saveTorrent() {
 // writes piece to the file once completed
 func (torrent *Torrent) addSubPiece(msg MSG, peer *Peer) error {
 	var err error = nil
-	subPieceIndex := int(math.Ceil(float64(msg.BeginIndex/SubPieceLen))) - 1
 
-	if torrent.File.Pieces[msg.PieceIndex].Status != "empty" {
-		torrent.File.Pieces[msg.PieceIndex].PieceTotalLen = int(msg.PieceLen)
-		if torrent.File.Pieces[msg.PieceIndex].PieceIndex != int(msg.PieceIndex) {
-			err = errors.New("wrong sub piece")
-		}
-	}
+	subPieceIndex := int(math.Ceil(float64(msg.BeginIndex / SubPieceLen)))
 
-	if err != nil {
-		return err
-	}
 	torrent.File.Pieces[msg.PieceIndex].CurrentLen += int(msg.PieceLen)
 
-	torrent.File.Pieces[msg.PieceIndex].SubPieces[subPieceIndex] = make([]byte,len(msg.Piece))
-
+	torrent.File.Pieces[msg.PieceIndex].SubPieces[subPieceIndex] = make([]byte, int(msg.PieceLen))
 	copy(torrent.File.Pieces[msg.PieceIndex].SubPieces[subPieceIndex], msg.Piece)
 
 	// piece is complete add it to the file
 	if torrent.File.Pieces[msg.PieceIndex].CurrentLen == torrent.File.Pieces[msg.PieceIndex].PieceTotalLen {
 		torrent.File.Pieces[msg.PieceIndex].Status = "complete"
-		file, _ := os.OpenFile(utils.DawnTorrentHomeDir+"/"+torrent.torrentMetaInfo.MapDict["info"].MapString["name"], os.O_CREATE|os.O_RDWR, os.ModePerm)
+		file, _ := os.OpenFile(utils.DawnTorrentHomeDir+"/"+torrent.File.torrentMetaInfo.MapDict["info"].MapString["name"], os.O_CREATE|os.O_RDWR, os.ModePerm)
 
 		delete(torrent.File.neededPieceMap, int(msg.PieceIndex))
 
@@ -295,7 +290,6 @@ func (torrent *Torrent) addSubPiece(msg MSG, peer *Peer) error {
 		_, _ = file.WriteAt(completePiece, int64(msg.PieceIndex)*int64(torrent.File.PieceLen))
 
 		// when a piece is complete, we update the index list
-		sort.Sort(torrent.File)
 	} else {
 		torrent.File.Pieces[msg.PieceIndex].Status = "inProgress"
 	}
@@ -315,78 +309,26 @@ func (torrent *Torrent) savePieces() {
 	}
 }
 
-func (torrent *Torrent) AddRequest(request Request) {
-	fmt.Printf("adding request %v\n",request)
-	torrent.requestQueueMutex.Lock()
-	torrent.RequestQueue.Push(request)
-	if atomic.LoadInt32(torrent.requestQueueAtomic) > 0{
-			atomic.AddInt32(torrent.requestQueueAtomic,-atomic.LoadInt32(torrent.requestQueueAtomic))
-				torrent.RequestQueueBlockMutex.Unlock()
+func (torrent *Torrent) Worker(queue *Queue, id int) {
+	for {
+		request := queue.Pop()
+		switch item := request.(type) {
 
-	}
-	torrent.requestQueueMutex.Unlock()
+		case MSG:
 
-}
-
-type Request struct {
-	msg      []byte
-	Peer     *Peer
-	Priority int
-}
-
-func requestQueueComparator(a, b interface{}) int {
-	n1 := a.(Request)
-	n2 := b.(Request)
-
-	switch {
-	case n1.Priority < n2.Priority:
-		return -1
-	case n1.Priority > n2.Priority:
-		return 1
-	default:
-		return 0
-	}
-}
-
-//loop through the request priority queue, send request and block until new request are available
-func (torrent *Torrent) RequestQueueManager() {
-	i := 0
-	ok := true
-	var req interface{}
-
-	for ok {
-		torrent.requestQueueMutex.Lock()
-		req, ok = torrent.RequestQueue.Pop()
-		torrent.requestQueueMutex.Unlock()
-
-		fmt.Printf("requestQueueManager %v\n", i)
-		i++
-		if ok {
-			reqStruct := req.(Request)
-			n, writeErr := reqStruct.Peer.connection.Write(reqStruct.msg)
-			fmt.Printf("requestQueueManager wrote  %v bytes to %v with %v err\n", n, reqStruct.Peer.connection.RemoteAddr().String(), writeErr)
-		} else {
-
-			if torrent.RequestQueue.Size() == 0{
-				fmt.Printf("requestQueueManager Locked\n")
-				atomic.AddInt32(torrent.requestQueueAtomic,1)
-				torrent.RequestQueueBlockMutex.Lock()
-				fmt.Printf("requestQueueManager Unlocked\n")
+			switch item.msgType {
+			case outgoingMsg:
+				_, err := item.Peer.connection.Write(item.rawMsg)
+				if err == nil {
+					fmt.Printf("send to %v by woker # %v\n", item.Peer.connection.RemoteAddr().String(), id)
+				} else {
+					fmt.Printf("errr %v", err)
+					//os.Exit(22)
+				}
+			case incomingMsg:
+				torrent.msgRouter(item)
 			}
 
-			ok = true
 		}
-
 	}
-	os.Exit(10)
 }
-
-func (torrent *Torrent)worker(){
-	requestWorker := 15
-	for i := 0; i < requestWorker ;i++ {
-		println("launch worker ",i)
-		go torrent.RequestQueueManager()
-	}
-
-}
-

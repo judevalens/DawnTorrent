@@ -5,8 +5,9 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"github.com/emirpasic/gods/maps/hashmap"
+	"io"
 	"io/ioutil"
-	"log"
 	"math"
 	"math/rand"
 	"net"
@@ -21,34 +22,39 @@ import (
 )
 
 type PeerSwarm struct {
-	Peers               []*Peer
-	PeersMap            map[string]*Peer
-	SortedPeersIndex    []int
-	interestedPeerIndex []int
-	interestedPeerMap   map[string]*Peer
-	interestingPeer     map[string]*Peer
-	unChockedPeer       []*Peer
-	unChockedPeerMap    map[string]*Peer
-	peerMutex           sync.Mutex
-	interestingPeerMutex           sync.Mutex
-	activeConnection  map[string]*Peer
-	maxConnection  int32
-	nActiveConnection *int32
+	Peers                   []*Peer
+	PeersMap                *hashmap.Map
+	PeerByDownloadRate      []*Peer
+	PeerByDownloadRateMutex *sync.RWMutex
+	interestedPeerIndex     []int
+	interestedPeerMap       map[string]*Peer
+	interestingPeer         map[string]*Peer
+	unChockedPeer           []*Peer
+	unChockedPeerMap        map[string]*Peer
+	peerMutex               *sync.RWMutex
+	interestingPeerMutex    sync.Mutex
+	activeConnectionMutex   *sync.RWMutex
+	activeConnection        *hashmap.Map
+	maxConnection           int32
+	nActiveConnection       *int32
 
-	torrent    *Torrent
+	torrent *Torrent
 }
 
 func NewPeerSwarm(torrent *Torrent) *PeerSwarm {
 	newPeerSwarm := new(PeerSwarm)
-	newPeerSwarm.PeersMap = make(map[string]*Peer)
+	newPeerSwarm.peerMutex = new(sync.RWMutex)
+	newPeerSwarm.PeerByDownloadRateMutex = new(sync.RWMutex)
+	newPeerSwarm.PeersMap = hashmap.New()
 	newPeerSwarm.interestingPeer = make(map[string]*Peer)
 	newPeerSwarm.interestedPeerMap = make(map[string]*Peer)
 	newPeerSwarm.unChockedPeer = make([]*Peer, 4)
 	//newPeerSwarm.unChockedPeerMap = make(map[string]*Peer,0)
-	newPeerSwarm.activeConnection = make(map[string]*Peer, 0)
-	newPeerSwarm.maxConnection = 70
+	newPeerSwarm.activeConnectionMutex = new(sync.RWMutex)
+	newPeerSwarm.activeConnection = hashmap.New()
+	newPeerSwarm.maxConnection = 1000
 	newPeerSwarm.nActiveConnection = new(int32)
-	atomic.AddInt32(newPeerSwarm.nActiveConnection,0)
+	atomic.AddInt32(newPeerSwarm.nActiveConnection, 0)
 	newPeerSwarm.torrent = torrent
 
 	newPeerSwarm.initConnection()
@@ -64,85 +70,86 @@ func (peerSwarm *PeerSwarm) Listen() {
 			connection, connErr := sever.AcceptTCP()
 			if connErr == nil {
 				// limits the number of active connection
-				if  *peerSwarm.nActiveConnection <= peerSwarm.maxConnection{
+				if *peerSwarm.nActiveConnection <= peerSwarm.maxConnection {
 					println("newPeer\n")
 
 					go peerSwarm.handleNewPeer(connection)
-				}else{
-					println(peerSwarm.nActiveConnection)
-					println(peerSwarm.maxConnection)
-					println("max connection reached!!!!!")
+				} else {
+					//println(peerSwarm.nActiveConnection)
+					//	println(peerSwarm.maxConnection)
+					///println("max connection reached!!!!!")
 				}
 			} else {
 				_ = connection.Close()
 			}
 		} else {
-			println("eer")
-			log.Fatal(err)
+			//println("eer")
+			//log.Fatal(err)
 		}
 
 	}
 }
+func (peerSwarm *PeerSwarm) connect(peer *Peer) {
+
+	remotePeerAddr, _ := net.ResolveTCPAddr("tcp", peer.ip+":"+peer.port)
+	connection, connectionErr := net.DialTCP("tcp", nil, remotePeerAddr)
+
+	if connectionErr == nil {
+		_ = connection.SetKeepAlive(true)
+		_ = connection.SetKeepAlivePeriod(utils.KeepAliveDuration)
+
+		msg := MSG{MsgID: HandShakeMsgID, InfoHash: []byte(peerSwarm.torrent.File.infoHash), MyPeerID: utils.MyID}
+		_, _ = connection.Write(GetMsg(msg, peer).rawMsg)
+
+		handshakeBytes := make([]byte, 68)
+		_, readErr := io.ReadFull(connection, handshakeBytes)
+
+		if readErr == nil {
+			_, handShakeErr := ParseHandShake(handshakeBytes, peerSwarm.torrent.File.infoHash)
+			if handShakeErr == nil {
+				defer peerSwarm.DropConnection(peer)
+				peerSwarm.peerMutex.Lock()
+				peer.connection = connection
+				peerSwarm.activeConnection.Put(peer.id, peer)
+				atomic.AddInt32(peerSwarm.nActiveConnection, 1)
+				peerSwarm.peerMutex.Unlock()
+				_ = peer.receive(connection, peerSwarm)
+			}
+		}
+	} else {
+		fmt.Printf("connection failed \n")
+	}
+}
 
 func (peerSwarm *PeerSwarm) handleNewPeer(connection *net.TCPConn) {
-	println("---------------------------------")
+	var newPeer *Peer
 	_ = connection.SetKeepAlive(true)
 	_ = connection.SetKeepAlivePeriod(utils.KeepAliveDuration)
-	var newPeer *Peer
 
-	mLen := 0
 	handShakeMsg := make([]byte, 68)
-	mLen, readFromConn := bufio.NewReader(connection).Read(handShakeMsg)
-	if readFromConn == nil {
-		fmt.Printf("read %v msg from %v : %v\n", mLen, connection.RemoteAddr(), handShakeMsg)
+	_, readErr := io.ReadFull(connection, handShakeMsg)
 
+	if readErr == nil {
 		parsedHandShakeMsg, handShakeErr := ParseHandShake(handShakeMsg, peerSwarm.torrent.File.infoHash)
 
 		if handShakeErr == nil {
 			remotePeerAddr, _ := net.ResolveTCPAddr("tcp", connection.RemoteAddr().String())
-			fmt.Printf("incoming connection from %v\n", remotePeerAddr.String())
-			//when we receive a connection request , we creat initialize a new peer struct
-			newPeer = peerSwarm.addNewPeer(remotePeerAddr.IP.String(),strconv.Itoa(remotePeerAddr.Port),parsedHandShakeMsg.peerID)
-			newPeer.connection = connection
-			peerSwarm.activeConnection[newPeer.id] = newPeer
-			n, writeErr := connection.Write(GetMsg(MSG{MsgID: HandShakeMsgID, InfoHash: []byte(peerSwarm.torrent.File.infoHash), MyPeerID: utils.MyID}))
-			fmt.Printf("wrote %v byte to %v with %v err", n, connection.RemoteAddr().String(), writeErr)
-			defer peerSwarm.DropConnection(newPeer)
+			handShakeMsgResponse := GetMsg(MSG{MsgID: HandShakeMsgID, InfoHash: []byte(peerSwarm.torrent.File.infoHash), MyPeerID: utils.MyID}, nil)
+			_, writeErr := connection.Write(handShakeMsgResponse.rawMsg)
 			if writeErr == nil {
-				i := 0
-				for readFromConn == nil {
-
-					incomingMsg := make([]byte, 32000)
-					_, readFromConn = bufio.NewReader(connection).Read(incomingMsg)
-					//	fmt.Printf("new msg # %v : %v\n", i, string(incomingMsg))
-
-					//	fmt.Printf("new msg byte # %v : %v\n", i, incomingMsg)
-
-					parsedMsg , parserMsgErr := ParseMsg(incomingMsg, newPeer)
-
-
-					//TODO
-					// if peer send a wrong packet, we close the connection, I know it's a little bit extreme; we shall fix that later
-					if parserMsgErr != nil{
-						_ = connection.Close()
-						break
-					}
-
-					peerSwarm.torrent.msgRouter(parsedMsg)
-
-					fmt.Printf("parsed msg \n msg ID %v LEN %v\n", parsedMsg.MsgID, parsedMsg.MsgLen)
-					i++
-
-					println("---------------------------------")
-
-				}
+				defer peerSwarm.DropConnection(newPeer)
+				newPeer = peerSwarm.addNewPeer(remotePeerAddr.IP.String(), strconv.Itoa(remotePeerAddr.Port), parsedHandShakeMsg.peerID)
+				newPeer.connection = connection
+				peerSwarm.peerMutex.Lock()
+				peerSwarm.activeConnection.Put(newPeer.id, newPeer)
+				atomic.AddInt32(peerSwarm.nActiveConnection, 1)
+				peerSwarm.peerMutex.Unlock()
+				_ = newPeer.receive(connection, peerSwarm)
 			}
 
-
 		} else {
-
-			fmt.Printf("%v \n closing connection \n", handShakeErr)
-			_ = connection.Close()
+			fmt.Printf("%v\n", handShakeErr)
+			fmt.Printf("%v", handShakeMsg)
 		}
 
 	} else {
@@ -151,15 +158,12 @@ func (peerSwarm *PeerSwarm) handleNewPeer(connection *net.TCPConn) {
 
 }
 
-
-
 func (peerSwarm *PeerSwarm) addPeersFromTracker(peers *parser.Dict) {
 	peerSwarm.Peers = make([]*Peer, 0)
 	_, isPresent := peers.MapList["peers"]
 	if isPresent {
 		for _, peer := range peers.MapList["peers"].LDict {
-
-			peerSwarm.addNewPeer(peer.MapString["ip"],peer.MapString["port"],peer.MapString["peer id"])
+			peerSwarm.addNewPeer(peer.MapString["ip"], peer.MapString["port"], peer.MapString["peer id"])
 		}
 	} else {
 
@@ -169,8 +173,8 @@ func (peerSwarm *PeerSwarm) addPeersFromTracker(peers *parser.Dict) {
 		for i < len(peers) {
 			fmt.Printf("peers : %v\n", []byte(peers[i:(i+6)]))
 
-			ip,port,id := peerSwarm.NewPeerFromString([]byte(peers[i:(i + 6)]))
-			peerSwarm.addNewPeer(ip,port,id)
+			ip, port, id := peerSwarm.NewPeerFromString([]byte(peers[i:(i + 6)]))
+			peerSwarm.addNewPeer(ip, port, id)
 
 			i += 6
 		}
@@ -179,7 +183,7 @@ func (peerSwarm *PeerSwarm) addPeersFromTracker(peers *parser.Dict) {
 
 }
 
-func (peerSwarm *PeerSwarm) TrackerRequest(event string)(*parser.Dict,error) {
+func (peerSwarm *PeerSwarm) TrackerRequest(event string) (*parser.Dict, error) {
 	var err error
 	PeerId := utils.MyID
 	infoHash := peerSwarm.torrent.File.infoHash
@@ -188,7 +192,7 @@ func (peerSwarm *PeerSwarm) TrackerRequest(event string)(*parser.Dict,error) {
 
 	fmt.Printf("%x\n", infoHash)
 
-	left :=peerSwarm.torrent.File.fileLen
+	left := peerSwarm.torrent.File.fileLen
 
 	trackerRequestParam := url.Values{}
 	trackerRequestParam.Add("info_hash", infoHash)
@@ -217,16 +221,15 @@ func (peerSwarm *PeerSwarm) TrackerRequest(event string)(*parser.Dict,error) {
 
 	}
 
-	return trackerDictResponse,err
+	return trackerDictResponse, err
 
 }
 
+func (peerSwarm *PeerSwarm) initConnection() {
 
-func (peerSwarm *PeerSwarm)initConnection(){
+	peersFromTracker, err := peerSwarm.TrackerRequest(startedEvent)
 
-	peersFromTracker , err := peerSwarm.TrackerRequest(startedEvent)
-
-	if err == nil{
+	if err == nil {
 		peerSwarm.addPeersFromTracker(peersFromTracker)
 		randomSeed := rand.New(rand.NewSource(time.Now().UnixNano()))
 		randomPeer := randomSeed.Perm(len(peerSwarm.Peers))
@@ -234,7 +237,7 @@ func (peerSwarm *PeerSwarm)initConnection(){
 		fmt.Printf("max peer %v", maxPeer)
 
 		for i := 0; i < int(maxPeer); i++ {
-			go peerSwarm.Peers[randomPeer[i]].ConnectTo(peerSwarm)
+			go peerSwarm.connect(peerSwarm.Peers[randomPeer[i]])
 		}
 	}
 
@@ -246,13 +249,15 @@ func (peerSwarm *PeerSwarm) NewPeer(dict *parser.Dict) *Peer {
 	newPeer.id = dict.MapString["peer id"]
 	newPeer.port = dict.MapString["port"]
 	newPeer.ip = dict.MapString["ip"]
-	newPeer.peerChocking = false
+	newPeer.peerIsChocking = true
+	newPeer.interested = false
+	newPeer.chocked = true
 	newPeer.interested = false
 	newPeer.AvailablePieces = make([]bool, int(math.Ceil(float64(peerSwarm.torrent.File.nPiece)/8.0)*8))
 
 	return newPeer
 }
-func (peerSwarm *PeerSwarm) NewPeerFromString(peer []byte) (string,string,string) {
+func (peerSwarm *PeerSwarm) NewPeerFromString(peer []byte) (string, string, string) {
 	newPeer := new(Peer)
 
 	newPeer.AvailablePieces = make([]bool, peerSwarm.torrent.File.nPiece)
@@ -278,46 +283,25 @@ func (peerSwarm *PeerSwarm) NewPeerFromString(peer []byte) (string,string,string
 
 	portBytes := binary.BigEndian.Uint16(peer[4:6])
 
-	return ipString,strconv.FormatUint(uint64(portBytes), 10),ipString + ":" + newPeer.port
+	return ipString, strconv.FormatUint(uint64(portBytes), 10), ipString + ":" + newPeer.port
 }
 func (peerSwarm *PeerSwarm) DropConnection(peer *Peer) {
 	peerSwarm.peerMutex.Lock()
-	delete(peerSwarm.PeersMap,peer.id)
-	peerSwarm.activeConnection[peer.connection.RemoteAddr().String()] = nil
-	atomic.AddInt32(peerSwarm.nActiveConnection,-1)
-
-	var indexInPeerList int = -1
-	var indexInSortedPeerList int = -1
-	for i, v := range peerSwarm.SortedPeersIndex{
-		if v == peer.peerIndex{
-			// saves the index where the peer's index is stored
-			indexInSortedPeerList = i
-			// saves the index of the peer that needs to be removed
-			indexInPeerList  = v
-			break
-		}
-	}
-
-	if indexInSortedPeerList >= 0{
-		peerSwarm.SortedPeersIndex = append(peerSwarm.SortedPeersIndex[:indexInSortedPeerList], peerSwarm.SortedPeersIndex[indexInSortedPeerList+1:]...)
-
-		peerSwarm.Peers = append(peerSwarm.Peers[:indexInPeerList],peerSwarm.Peers[indexInPeerList+1:]...)
-	}
+	//peerSwarm.activeConnection.Remove(peer.id)
+	atomic.AddInt32(peerSwarm.nActiveConnection, -1)
 	peerSwarm.peerMutex.Unlock()
-
 }
-func (peerSwarm *PeerSwarm) addNewPeer(peerIp ,peerPort,peerID  string )*Peer{
+func (peerSwarm *PeerSwarm) addNewPeer(peerIp, peerPort, peerID string) *Peer {
 	peerDict := new(parser.Dict)
 	peerDict.MapString = make(map[string]string)
 	peerDict.MapString["ip"] = peerIp
 	peerDict.MapString["port"] = peerPort
-	peerDict.MapString["peer id"] =peerID
+	peerDict.MapString["peer id"] = peerID
 	newPeer := peerSwarm.NewPeer(peerDict)
 	peerSwarm.peerMutex.Lock()
-	peerSwarm.PeersMap[newPeer.id] = newPeer
+	peerSwarm.PeersMap.Put(newPeer.id, newPeer)
 	peerSwarm.Peers = append(peerSwarm.Peers, newPeer)
-	peerSwarm.SortedPeersIndex = append(peerSwarm.SortedPeersIndex, len(peerSwarm.Peers)-1)
-	atomic.AddInt32(peerSwarm.nActiveConnection,1)
+	newPeer.peerIndex = len(peerSwarm.Peers) - 1
 	peerSwarm.peerMutex.Unlock()
 	return newPeer
 
@@ -325,27 +309,72 @@ func (peerSwarm *PeerSwarm) addNewPeer(peerIp ,peerPort,peerID  string )*Peer{
 func (peerSwarm *PeerSwarm) Len() int {
 	return len(peerSwarm.Peers)
 }
-
 func (peerSwarm *PeerSwarm) Less(i, j int) bool {
 	peerSwarm.peerMutex.Lock()
-	ans := peerSwarm.Peers[peerSwarm.SortedPeersIndex[i]].DownloadRate < peerSwarm.Peers[peerSwarm.SortedPeersIndex[j]].DownloadRate
+	ans := peerSwarm.Peers[0].DownloadRate < peerSwarm.Peers[0].DownloadRate
 	peerSwarm.peerMutex.Unlock()
 	return ans
 }
-
 func (peerSwarm *PeerSwarm) Swap(i, j int) {
-	temp := peerSwarm.SortedPeersIndex[i]
-	peerSwarm.SortedPeersIndex[i] = peerSwarm.SortedPeersIndex[j]
-	peerSwarm.SortedPeersIndex[j] = temp
+
+}
+
+func (peerSwarm *PeerSwarm) UpdatePeerByDownloadRate(peer *Peer) {
+	for i := len(peerSwarm.PeerByDownloadRate) - 1; i <= 0; i-- {
+		if peer.DownloadRate > peerSwarm.PeerByDownloadRate[i].DownloadRate {
+
+			peerSwarm.PeerByDownloadRateMutex.Lock()
+			peerSwarm.PeerByDownloadRate[i] = peer
+			peerSwarm.PeerByDownloadRateMutex.Unlock()
+
+			break
+		}
+	}
+}
+
+func (peerSwarm *PeerSwarm) GetPeerByDownloadRate(index int) *Peer {
+	p := peerSwarm.PeerByDownloadRate[index]
+
+	i := 0
+
+	for p == nil && i > len(peerSwarm.PeerByDownloadRate) {
+		peerSwarm.peerMutex.RLock()
+		p = peerSwarm.PeerByDownloadRate[i]
+		peerSwarm.peerMutex.RUnlock()
+
+	}
+	randomSeed := rand.New(rand.NewSource(time.Now().UnixNano()))
+	for p == nil && i < len(peerSwarm.Peers) {
+		randN := randomSeed.Intn(len(peerSwarm.Peers))
+		activeConnectionKey := peerSwarm.activeConnection.Keys()
+		activeConnectionKeyS := activeConnectionKey[randN].(string)
+		peerSwarm.peerMutex.RLock()
+		v, _ := peerSwarm.activeConnection.Get(activeConnectionKeyS)
+		peerSwarm.peerMutex.RUnlock()
+
+		p = v.(*Peer)
+
+		//making sure that the peer isn't already in the list
+		for _, v := range peerSwarm.PeerByDownloadRate {
+			if v.id == p.id {
+				p = nil
+				break
+			}
+		}
+		i++
+	}
+
+	return p
+
 }
 
 type Peer struct {
 	ip                string
 	port              string
 	id                string
-	peerIndex 		int
-	peerChocking      bool
-	peerInterested    bool
+	peerIndex         int
+	peerIsChocking    bool
+	peerIsInteresting bool
 	chocked           bool
 	interested        bool
 	AvailablePieces   []bool
@@ -355,65 +384,8 @@ type Peer struct {
 	DownloadRate      float64
 	connection        *net.TCPConn
 }
-func (peer *Peer) ConnectTo(peerSwarm *PeerSwarm) {
 
-	remotePeerAddr, _ := net.ResolveTCPAddr("tcp", peer.ip+":"+peer.port)
-	connection, connectionErr := net.DialTCP("tcp", nil, remotePeerAddr)
-	if connectionErr == nil {
-		println("---------------------------------------------")
-		fmt.Printf("connected to peer at : %v from %v\n", remotePeerAddr.String(), connection.LocalAddr().String())
-
-		msg := MSG{MsgID: HandShakeMsgID, InfoHash: []byte(peerSwarm.torrent.File.infoHash), MyPeerID: utils.MyID}
-		nByteWritten, writeErr := connection.Write(GetMsg(msg))
-		fmt.Printf("write %v bytes with %v connectionErr\n", nByteWritten, writeErr)
-
-		handshakeBytes := make([]byte, 68)
-		_, readFromConError := bufio.NewReader(connection).Read(handshakeBytes)
-
-		fmt.Printf("Back HandShake %v\n", handshakeBytes)
-
-		_, handShakeErr := ParseHandShake(handshakeBytes, peerSwarm.torrent.File.infoHash)
-
-		if handShakeErr == nil && readFromConError == nil {
-			// if handshake is successful
-			// we attached the connection to the peer struct
-			peer.connection = connection
-			peerSwarm.activeConnection[remotePeerAddr.String()] = peer
-			defer peerSwarm.DropConnection(peer)
-
-			i := 0
-			_, _ = connection.Write(GetMsg(MSG{MsgID: InterestedMsg}))
-
-			for readFromConError == nil {
-				incomingMsg := make([]byte, 32000)
-
-				_, readFromConError = bufio.NewReader(connection).Read(incomingMsg)
-
-				parsedMsg, parserMsgErr := ParseMsg(incomingMsg, peer)
-
-				if parserMsgErr != nil {
-					_ = connection.Close()
-					break
-				}
-
-				/// TODO will probably use a worker pool here !
-				peerSwarm.torrent.msgRouter(parsedMsg)
-
-				fmt.Printf("msg# %v \nparsed msg \n msg ID %v LEN %v\n", i, parsedMsg.MsgID, parsedMsg.MsgLen)
-
-				i++
-				println("---------------------------------------------")
-
-			}
-
-		} else {
-			fmt.Printf("%v\n", handShakeErr)
-		}
-	} else {
-		fmt.Printf("%v\n", connectionErr)
-	}
-}
-func (peer *Peer) updateState(choked, interested bool,torrent *Torrent) {
+func (peer *Peer) updateState(choked, interested bool, torrent *Torrent) {
 
 	peer.chocked = choked
 	peer.interested = interested
@@ -429,4 +401,41 @@ func (peer *Peer) updateState(choked, interested bool,torrent *Torrent) {
 			}
 		}
 	}
+}
+
+func (peer *Peer) receive(connection *net.TCPConn, peerSwarm *PeerSwarm) error {
+	incomingMsg := make([]byte, 18000)
+	var readFromConnError error
+	i := 0
+	for readFromConnError == nil {
+
+		_, readFromConnError = bufio.NewReader(connection).Read(incomingMsg)
+
+		parsedMsg, parserMsgErr := ParseMsg(incomingMsg, peer)
+
+		if parserMsgErr == nil {
+			// TODO will probably use a worker pool here !
+			//peerSwarm.torrent.requestQueue.addJob(parsedMsg)
+			if parsedMsg.MsgID == BitfieldMsg {
+			}
+			peerSwarm.torrent.incomingMsgQueue.Add(parsedMsg)
+			//peerSwarm.torrent.msgRouter(parsedMsg)
+
+			if parsedMsg.MsgID == BitfieldMsg {
+				///os.Exit(23)
+			}
+
+		}
+
+		i++
+		println("---------------------------------------------")
+
+	}
+
+	return readFromConnError
+}
+func (peer *Peer) send(msg MSG) error {
+	_, writeError := peer.connection.Write(msg.rawMsg)
+
+	return writeError
 }
