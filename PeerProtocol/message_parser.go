@@ -34,7 +34,7 @@ var (
 	haveMsgLen             = []byte{0, 0, 0, 5}
 	requestMsgLen          = []byte{0, 0, 1, 3}
 	cancelMsgLen           = []byte{0, 0, 1, 3}
-	pieceLen               = []byte{0, 0, 0, 9}
+	pieceLen               = 9
 	portMsgLen             = []byte{0, 0, 0, 3}
 	HandShakePrefixLength  = []byte{19}
 	ProtocolIdentifier     = []byte("BitTorrent protocol")
@@ -148,8 +148,11 @@ func ParseMsg(msg []byte, peer *Peer) (MSG, error) {
 		case PieceMsg:
 			msgStruct.PieceIndex = binary.BigEndian.Uint32(msg[5:9])
 			msgStruct.BeginIndex = binary.BigEndian.Uint32(msg[9:13])
-			msgStruct.PieceLen = uint32(math.Abs(float64(msgStruct.MsgLen - binary.BigEndian.Uint32(pieceLen))))
-			msgStruct.Piece = msg[17 : msgStruct.PieceLen+17]
+			msgStruct.PieceLen = uint32(math.Abs(float64(msgStruct.MsgLen - uint32(pieceLen))))
+			///fmt.Printf("msg Header %v,msg Len %v , piecelen %v",msg[0:13], msgStruct.MsgLen, msgStruct.PieceLen)
+			//os.Exit(1223)
+			msgStruct.Piece = make([]byte,msgStruct.PieceLen)
+			copy(msgStruct.Piece,msg[13 : msgStruct.PieceLen+13])
 			msgStruct.priority = priority2
 
 		case HaveMsg:

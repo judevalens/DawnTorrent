@@ -6,6 +6,7 @@ import (
 	"fmt"
 	upnp "github.com/huin/goupnp/dcps/internetgateway1"
 	"log"
+	"math"
 	"math/rand"
 	"net"
 	"os"
@@ -55,6 +56,7 @@ func GetRandomId() string {
 
 
 func Debugln(st string){
+
 	if DEBUG {
 		fmt.Println(st)
 	}
@@ -96,6 +98,36 @@ func LocalAddress() net.IP {
 	}
 
 	return net.IP{}
+}
+
+func BitMask(b uint8,bits []int, action int)uint8 {
+
+	if action == 1 {
+		for _,v := range bits{
+			bitPosition := uint8(math.Exp2(float64(v)))
+			b = b|bitPosition
+		}
+	}else if action == 0{
+		for _,v := range bits{
+			bitPosition := uint8(math.Exp2(float64(v)))
+			bitPositionFlipped := flipBit(bitPosition )
+			b = b&bitPositionFlipped
+		}
+	}
+
+	return b
+
+}
+func BitStatus(b uint8,pos int)bool{
+	bitPosition := uint8(math.Exp2(float64(pos)))
+	a := b & bitPosition
+
+	return a != 0
+}
+func flipBit(b uint8) uint8 {
+	a := uint8(255)
+	a = a &^ b
+	return a
 }
 
 /// That's a work in progress
