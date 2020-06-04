@@ -4,71 +4,155 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
+	"torrent/utils"
+
+	//"github.com/emirpasic/gods/lists/arraylist"
 	"github.com/emirpasic/gods/maps/hashmap"
-	"github.com/emirpasic/gods/sets/hashset"
 	"math"
-	"sort"
 	"strconv"
 	"sync"
 	"torrent/parser"
 )
 
-type torrentFile struct {
-	infoHash            string
-	fileName            string
-	behavior            string
-	fileLen             int
-	currentPiece        *Piece
-	Pieces              []*Piece
-	PiecesMutex         *sync.RWMutex
-	SortedAvailability  []int
-	nPiece              int
-	nSubPiece           int
-	SubPieceLen         int
-	PieceLen            int
-	completedPieceIndex map[int]*Piece
-	neededPieceMap      *hashmap.Map
-	torrentMetaInfo     *parser.Dict
-
-	completedPieceSet	*hashset.Set
+type TorrentFile struct {
+	announce        string
+	announceList    []string
+	comment         string
+	createdBy       string
+	creationDate    string
+	encoding        string
+	fileMode        int
+	filesMutex      sync.RWMutex
+	files           []fileInfo
+	PiecesMutex     sync.RWMutex
+	Pieces          []*Piece
+	nPiece          int
+	fileTotalLength int
+	subPieceLen     int
+	nSubPiece       int
+	infoHash        string
+	pieces          string
+	pieceLength     int
+	rootDirectory   string
+	NeededPiece     *hashmap.Map
+	currentPiece    *Piece
+	behavior		string
+	SelectNewPiece bool
+	CurrentPieceIndex int
+	torrent *Torrent
 }
 
-func NewFile(torrent *Torrent, torrentPath string) *torrentFile {
-	torrentFile := new(torrentFile)
-	torrentFile.PiecesMutex = new(sync.RWMutex)
-	torrentFile.torrentMetaInfo = parser.Unmarshall(torrentPath)
-	torrentFile.infoHash = GetInfoHash(torrentFile.torrentMetaInfo)
-	torrentFile.fileLen, _ = strconv.Atoi(torrentFile.torrentMetaInfo.MapDict["info"].MapString["length"])
-	torrentFile.PieceLen, _ = strconv.Atoi(torrentFile.torrentMetaInfo.MapDict["info"].MapString["piece length"])
-	torrentFile.SubPieceLen = int(math.Min(float64(torrentFile.PieceLen), SubPieceLen))
+type fileInfo struct {
+	path       string
+	length     int
+	fileIndex int
+	startIndex int
+	endIndex int
 
-	torrentFile.nPiece = int(math.Ceil(float64(torrentFile.fileLen) / float64(torrentFile.PieceLen)))
-	torrentFile.nSubPiece = int(math.Ceil(float64(torrentFile.PieceLen) / float64(SubPieceLen)))
-	torrentFile.Pieces = make([]*Piece, torrentFile.nPiece)
-	torrentFile.neededPieceMap = hashmap.New()
-	torrentFile.completedPieceSet = hashset.New()
+}
 
-	//TODO this will probably be removed
-	torrentFile.completedPieceIndex = make(map[int]*Piece)
-	torrentFile.SortedAvailability = make([]int, torrentFile.nPiece)
-	/// it's weird not sure it is the right way
 
-	for i, _ := range torrentFile.Pieces {
-		pieceLen := torrentFile.PieceLen
-		if i == torrentFile.nPiece-1 {
-			if float64(torrentFile.fileLen)/float64(torrentFile.fileLen) != 0 {
-				pieceLen = torrentFile.PieceLen % torrentFile.PieceLen
-			}
+
+func initTorrentFile(torrent *Torrent, torrentPath string) *TorrentFile {
+	file := new(TorrentFile)
+	file.torrent = torrent
+	metaInfo := parser.Unmarshall(torrentPath)
+	file.infoHash = GetInfoHash(metaInfo)
+	file.announce = metaInfo.MapString["announce"]
+	file.announceList = make([]string,0)
+
+	//TODO need fix
+	/*for	_,v := range metaInfo.MapList["announce-list"].LList{
+		for _ , s := range v.LString{
+			file.announceList = append(file.announceList,s)
 		}
-		torrentFile.Pieces[i] = torrentFile.NewPiece(pieceLen, i)
-		torrentFile.neededPieceMap.Put(i,torrentFile.Pieces[i])
-		torrentFile.SortedAvailability[i] = i
+	}*/
+	file.creationDate = metaInfo.MapString["creation date"]
+	file.encoding = metaInfo.MapString["encoding"]
+	file.pieceLength, _ = strconv.Atoi(metaInfo.MapDict["info"].MapString["piece length"])
+
+
+	file.NeededPiece = hashmap.New()
+	_,isPresent := metaInfo.MapDict["info"].MapList["files"]
+
+	if isPresent{
+		file.fileMode = 1
+		for fileIndex, v := range metaInfo.MapDict["info"].MapList["files"].LDict{
+			filePath := v.MapList["path"].LString[0]
+			fileLength, _ := strconv.Atoi(v.MapString["length"])
+
+			newFile := newFileInfo(file,filePath,fileLength,fileIndex)
+			file.files = append(file.files,newFile)
+		}
+	}else{
+		file.fileMode = 0
+		filePath := metaInfo.MapDict["info"].MapString["name"]
+		fileLength, _ := strconv.Atoi(metaInfo.MapDict["info"].MapString["length"])
+
+		file.files = append(file.files,newFileInfo(file,filePath,fileLength,0))
 	}
 
-	torrentFile.behavior = "random"
-	return torrentFile
+	file.subPieceLen = int(math.Min(float64(file.pieceLength), SubPieceLen))
+	file.nSubPiece = int(math.Ceil(float64(file.pieceLength)/float64(file.subPieceLen)))
+	file.nPiece = int(math.Ceil(float64(file.fileTotalLength)/float64(file.pieceLength)))
+	file.Pieces = make([]*Piece,file.nPiece)
+
+	for i,_ := range file.Pieces {
+
+		pieceLen := file.pieceLength
+		if i == file.nPiece-1 {
+			if file.fileTotalLength%file.pieceLength != 0 {
+				pieceLen = file.fileTotalLength % file.pieceLength
+				println("pieceLen")
+				println(pieceLen)
+				println(file.fileTotalLength)
+			}
+		}
+		file.Pieces[i] = NewPiece(file,i,pieceLen)
+		file.NeededPiece.Put(i,file.Pieces[i])
+	}
+	pieceIndex := 0
+	for i:= 0; i < len(file.files);i++{
+		f := file.files[i]
+		pos := new(pos)
+		pos.fileIndex = i
+			for pos.end != f.endIndex{
+				currentPiece := file.Pieces[pieceIndex]
+				pos.start = int(math.Max(float64(currentPiece.pieceStartIndex),float64(f.startIndex)))
+				pos.end= int(math.Min(float64(currentPiece.pieceEndIndex),float64(f.endIndex)))
+				pos.writingIndex = pos.start-f.startIndex
+				currentPiece.position = append(currentPiece.position,*pos)
+				if currentPiece.pieceEndIndex == pos.end{
+					pieceIndex++
+				}
+
+		}
+
+
+	}
+
+	file.behavior = "random"
+	return file
 }
 
+func newFileInfo(torrentFile *TorrentFile,filePath string , fileLength int ,fileIndex int) fileInfo{
+	f := fileInfo{}
+
+	f.path = filePath
+	f.length = fileLength
+
+	torrentFile.fileTotalLength += f.length
+
+	if fileIndex == 0 {
+		f.startIndex = 0
+	}else{
+		f.startIndex = torrentFile.files[fileIndex-1].endIndex
+	}
+
+	f.endIndex = f.startIndex+f.length
+
+	return f
+}
 func GetInfoHash(dict *parser.Dict) string {
 
 	// InnerStartingPosition leaves out the key
@@ -91,48 +175,95 @@ func GetInfoHash(dict *parser.Dict) string {
 	return string(bSlice)
 
 }
-func (torrentFile *torrentFile) NewPiece(PieceTotalLen int, pieceIndex int) *Piece {
+// TODO clean up later
+func NewPiece(torrentFile *TorrentFile,PieceIndex,pieceLength int) *Piece {
 	newPiece := new(Piece)
 
-	newPiece.PieceTotalLen = PieceTotalLen
+	newPiece.PieceTotalLen = pieceLength
 	newPiece.owners = make(map[string]*Peer)
 	newPiece.Availability = 0
-	newPiece.PieceIndex = pieceIndex
-	newPiece.SubPieces = make([]byte, newPiece.PieceTotalLen)
+	newPiece.PieceIndex = PieceIndex
+	newPiece.pieceStartIndex = PieceIndex*torrentFile.pieceLength
+	newPiece.pieceEndIndex  = newPiece.pieceStartIndex+pieceLength
+	newPiece.Pieces = make([]byte, newPiece.PieceTotalLen)
 	newPiece.Status = "empty"
-	newPiece.subPieceMask = make([]byte,int(math.Ceil(float64(33) / float64(8))))
-
-
-	fmt.Printf("N subpiece %v\n",torrentFile.nSubPiece)
+	newPiece.subPieceMask = make([]byte, int(math.Ceil(float64(torrentFile.nSubPiece)/float64(8))))
 
 	return newPiece
 
 }
-func (torrentFile *torrentFile) Len() int {
-	return len(torrentFile.SortedAvailability)
-}
-func (torrentFile *torrentFile) Less(i, j int) bool {
+func (file *TorrentFile) AddSubPiece(msg MSG, peer *Peer) error {
+	var err error = nil
 
-	return false
-}
-func (torrentFile *torrentFile) Swap(i, j int) {
-	temp := torrentFile.SortedAvailability[i]
-	torrentFile.SortedAvailability[i] = torrentFile.SortedAvailability[j]
-	torrentFile.SortedAvailability[j] = temp
+	currentPiece := file.Pieces[msg.PieceIndex]
+	subPieceIndex := int(math.Ceil(float64(msg.BeginIndex / SubPieceLen)))
+	subPieceBitMaskIndex := int(math.Ceil(float64(subPieceIndex / 8)))
+	subPieceBitIndex := subPieceIndex % 8
+	file.PiecesMutex.Lock()
+	isEmpty := utils.IsBitOn(currentPiece.subPieceMask[subPieceBitMaskIndex], subPieceBitIndex) == false
+	file.PiecesMutex.Unlock()
 
-}
-func (torrentFile *torrentFile) sortPieces() {
-	sort.Sort(torrentFile)
+	if isEmpty {
+		fmt.Printf("Piece COunter %v\n",file.torrent.PieceCounter)
+		file.torrent.PieceCounter++
+		currentPiece.CurrentLen += msg.PieceLen
+		copy(currentPiece.Pieces[msg.BeginIndex:msg.BeginIndex+msg.PieceLen], msg.Piece)
+		file.PiecesMutex.Lock()
+		currentPiece.subPieceMask[subPieceBitMaskIndex] = utils.BitMask(currentPiece.subPieceMask[subPieceBitMaskIndex], []int{subPieceBitIndex}, 1)
+		file.PiecesMutex.Unlock()
+
+		// piece is complete add it to the file
+		isPieceComplete := currentPiece.PieceTotalLen == currentPiece.CurrentLen
+
+		if isPieceComplete {
+			file.NeededPiece.Remove(currentPiece.PieceIndex)
+			currentPiece.Status = "complete"
+			file.SelectNewPiece = true
+			for _,pos := range currentPiece.position{
+				_ = pos
+			//	currentFile := file.files[pos.fileIndex]
+			//	f, _ := os.OpenFile(utils.DawnTorrentHomeDir+"/"+currentFile.path, os.O_CREATE|os.O_RDWR, os.ModePerm)
+
+				//getting the length of the piece
+			//	pieceRelativeLen := pos.end-pos.start
+			//	pieceRelativeStart := pos.start-(currentPiece.PieceIndex*file.pieceLength)
+			//	pieceRelativeEnd := pieceRelativeStart+pieceRelativeLen
+			//	_, _ = f.WriteAt(currentPiece.Pieces[pieceRelativeStart:pieceRelativeEnd], int64(pos.writingIndex))
+			}
+			//os.Exit(2222234)
+		} else {
+			currentPiece.Status = "inProgress"
+			file.SelectNewPiece = false
+		}
+	}
+
+	//peer.numByteDownloaded += int(msg.PieceLen)
+	//peer.lastTimeStamp = time.Now()
+	//peer.time += time.Now().Sub(peer.lastTimeStamp).Seconds()
+	//peer.DownloadRate = (float64(peer.numByteDownloaded)) / peer.time
+	return err
 }
 
 type Piece struct {
+	fileIndex int
 	PieceTotalLen int
 	CurrentLen    int
 	SubPieceLen   int
 	Status        string
-	SubPieces     []byte
+	Pieces        []byte
 	PieceIndex    int
+	AbsIndex      int
 	Availability  int
 	owners        map[string]*Peer
-	subPieceMask		[]byte
+	subPieceMask  []byte
+	pieceStartIndex int
+	pieceEndIndex int
+	position []pos
+}
+
+type pos struct {
+	fileIndex int
+	start int
+	end int
+	writingIndex int
 }

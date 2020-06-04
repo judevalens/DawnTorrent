@@ -2,7 +2,6 @@ package PeerProtocol
 
 import (
 	"container/list"
-	"fmt"
 	"sync"
 )
 
@@ -20,25 +19,25 @@ type TestQueue struct {
 
 func (testQueue *TestQueue) Worker(q *Queue, id int) {
 	i := 0
-	fmt.Printf("\n running \n")
+	//fmt.Printf("\n running \n")
 	for {
-		fmt.Printf("step %v\n", i)
+		//fmt.Printf("step %v\n", i)
 
-		item := q.Pop()
-		data := item.(int)
-		fmt.Printf("woker # %v step %v item %v\n", id, i, data)
+		//item := q.Pop()
+		//data := item.(int)
+		//fmt.Printf("woker # %v step %v item %v\n", id, i, data)
 		i++
 	}
 }
 
 func (testQueue *TestQueue) wosrker(q *Queue) {
 	i := 0
-	fmt.Printf("running\n")
+	//fmt.Printf("running\n")
 	for {
-		fmt.Printf("step %v\n", i)
+		//fmt.Printf("step %v\n", i)
 		//item := q.Pop()
 		//data := item.(int)
-		//fmt.Printf("step %v item %v\n", i,data)
+		////fmt.Printf("step %v item %v\n", i,data)
 		i++
 	}
 }
@@ -74,7 +73,7 @@ func (q *Queue) Pop() interface{} {
 	if item != nil {
 		value = q.queue.Remove(item)
 	}
-	println("popped")
+	//println("popped")
 	q.queueMutex.Unlock()
 	q.queueEmptyCond.L.Lock()
 	for item == nil {
@@ -95,13 +94,13 @@ func (q *Queue) Pop() interface{} {
 }
 
 func (q *Queue) Run(i int) {
-	fmt.Printf("running %v workers\n", i)
+	//fmt.Printf("running %v workers\n", i)
 	for x := 0; x < i; x++ {
-		fmt.Printf("start %v\n", x)
+		//fmt.Printf("start %v\n", x)
 
 		go q.Worker.Worker(q, x)
 
-		fmt.Printf("launched %v\n", x)
+		//fmt.Printf("launched %v\n", x)
 
 	}
 }

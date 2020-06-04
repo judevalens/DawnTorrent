@@ -118,7 +118,7 @@ func BitMask(b uint8,bits []int, action int)uint8 {
 	return b
 
 }
-func BitStatus(b uint8,pos int)bool{
+func IsBitOn(b uint8,pos int)bool{
 	bitPosition := uint8(math.Exp2(float64(pos)))
 	a := b & bitPosition
 

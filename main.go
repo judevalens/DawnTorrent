@@ -1,14 +1,14 @@
 package main
 
 import (
-	//"time"
 	"torrent/PeerProtocol"
 )
 
 func main() {
 	done := make(chan bool)
 
-	torrentPath := "files/ubuntu-20.04-live-server-amd64.iso.torrent"
+
+	torrentPath := "files/ubuntu-18.04.4-live-server-amd64.iso.torrent"
 	torrent := PeerProtocol.NewTorrent(torrentPath, done)
 	//go torrent.RequestQueueManager()
 	_ = torrent
