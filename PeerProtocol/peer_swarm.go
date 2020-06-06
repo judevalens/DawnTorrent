@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	//"os"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -52,7 +53,7 @@ func NewPeerSwarm(torrent *Torrent) *PeerSwarm {
 	//newPeerSwarm.unChockedPeerMap = make(map[string]*Peer,0)
 	newPeerSwarm.activeConnectionMutex = new(sync.RWMutex)
 	newPeerSwarm.activeConnection = hashmap.New()
-	newPeerSwarm.maxConnection = 25
+	newPeerSwarm.maxConnection = 50
 	newPeerSwarm.nActiveConnection = new(int32)
 	atomic.AddInt32(newPeerSwarm.nActiveConnection, 0)
 	newPeerSwarm.torrent = torrent
@@ -141,15 +142,14 @@ func (peerSwarm *PeerSwarm) handleNewPeer(connection *net.TCPConn) {
 			handShakeMsgResponse := GetMsg(MSG{MsgID: HandShakeMsgID, InfoHash: []byte(peerSwarm.torrent.File.infoHash), MyPeerID: utils.MyID}, nil)
 			_, writeErr := connection.Write(handShakeMsgResponse.rawMsg)
 			if writeErr == nil {
-				defer peerSwarm.DropConnection(newPeer)
 				newPeer = peerSwarm.addNewPeer(remotePeerAddr.IP.String(), strconv.Itoa(remotePeerAddr.Port), parsedHandShakeMsg.peerID)
 				newPeer.connection = connection
-				peerSwarm.peerMutex.Lock()
+				peerSwarm.activeConnectionMutex.Lock()
 				peerSwarm.activeConnection.Put(newPeer.id, newPeer)
 				atomic.AddInt32(peerSwarm.nActiveConnection, 1)
-				peerSwarm.peerMutex.Unlock()
+				peerSwarm.activeConnectionMutex.Unlock()
 				peerSwarm.torrent.requestQueue.Add(GetMsg(MSG{MsgID: InterestedMsg}, newPeer))
-
+				defer peerSwarm.DropConnection(newPeer)
 				_ = newPeer.receive(connection, peerSwarm)
 			}
 
@@ -418,10 +418,10 @@ func (peerSwarm *PeerSwarm) NewPeerFromString(peer []byte) (string, string, stri
 	return ipString, strconv.FormatUint(uint64(portBytes), 10), ipString + ":" + newPeer.port
 }
 func (peerSwarm *PeerSwarm) DropConnection(peer *Peer) {
-	peerSwarm.peerMutex.Lock()
-	//peerSwarm.activeConnection.Remove(peer.id)
+	peerSwarm.activeConnectionMutex.Lock()
+	peerSwarm.activeConnection.Remove(peer.id)
 	atomic.AddInt32(peerSwarm.nActiveConnection, -1)
-	peerSwarm.peerMutex.Unlock()
+	peerSwarm.activeConnectionMutex.Unlock()
 }
 func (peerSwarm *PeerSwarm) addNewPeer(peerIp, peerPort, peerID string) *Peer {
 	peerDict := new(parser.Dict)
@@ -536,7 +536,7 @@ func (peer *Peer) updateState(choked, interested bool, torrent *Torrent) {
 }
 
 func (peer *Peer) receive(connection *net.TCPConn, peerSwarm *PeerSwarm) error {
-	incomingMsg := make([]byte, 16200)
+	incomingMsg := make([]byte, 18000)
 	var readFromConnError error
 	i := 0
 	for readFromConnError == nil {
@@ -548,13 +548,17 @@ func (peer *Peer) receive(connection *net.TCPConn, peerSwarm *PeerSwarm) error {
 		if parserMsgErr == nil {
 			// TODO will probably use a worker pool here !
 			//peerSwarm.torrent.requestQueue.addJob(parsedMsg)
-			if parsedMsg.MsgID == BitfieldMsg {
+			if parsedMsg.MsgID == PieceMsg {
+				peerSwarm.torrent.pieceQueue.Add(parsedMsg)
+
+			}else{
+				peerSwarm.torrent.incomingMsgQueue.Add(parsedMsg)
+
 			}
-			peerSwarm.torrent.incomingMsgQueue.Add(parsedMsg)
 			//peerSwarm.torrent.msgRouter(parsedMsg)
 
-			if parsedMsg.MsgID == BitfieldMsg {
-				///os.Exit(23)
+			if parsedMsg.MsgID == UnchockeMsg {
+				//os.Exit(213)
 			}
 
 		}

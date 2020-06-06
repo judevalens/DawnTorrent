@@ -201,6 +201,9 @@ func ParseMsg(msg []byte, peer *Peer) (MSG, error) {
 			msgStruct.BeginIndex = int(binary.BigEndian.Uint32(msg[9:13]))
 			msgStruct.PieceLen = int(binary.BigEndian.Uint32(msg[13:17]))
 			msgStruct.priority = priority2
+		case UnchockeMsg:
+			println("msgStruct.MsgID")
+			println(msgStruct.MsgID)
 
 			// default msg -> interested,choke
 		}

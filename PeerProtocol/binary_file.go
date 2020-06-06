@@ -4,6 +4,8 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
+	"os"
+	"time"
 	"torrent/utils"
 
 	//"github.com/emirpasic/gods/lists/arraylist"
@@ -188,7 +190,8 @@ func NewPiece(torrentFile *TorrentFile,PieceIndex,pieceLength int) *Piece {
 	newPiece.Pieces = make([]byte, newPiece.PieceTotalLen)
 	newPiece.Status = "empty"
 	newPiece.subPieceMask = make([]byte, int(math.Ceil(float64(torrentFile.nSubPiece)/float64(8))))
-
+	newPiece.pendingRequestMutex = new(sync.RWMutex)
+	newPiece.pendingRequest = hashmap.New()
 	return newPiece
 
 }
@@ -202,11 +205,15 @@ func (file *TorrentFile) AddSubPiece(msg MSG, peer *Peer) error {
 	file.PiecesMutex.Lock()
 	isEmpty := utils.IsBitOn(currentPiece.subPieceMask[subPieceBitMaskIndex], subPieceBitIndex) == false
 	file.PiecesMutex.Unlock()
-
+	currentPiece.pendingRequestMutex.Lock()
+	currentPiece.pendingRequest.Remove(msg.BeginIndex)
+	currentPiece.pendingRequestMutex.Unlock()
 	if isEmpty {
 		fmt.Printf("Piece COunter %v\n",file.torrent.PieceCounter)
 		file.torrent.PieceCounter++
 		currentPiece.CurrentLen += msg.PieceLen
+		println("msg.BeginIndex")
+		println(msg.BeginIndex)
 		copy(currentPiece.Pieces[msg.BeginIndex:msg.BeginIndex+msg.PieceLen], msg.Piece)
 		file.PiecesMutex.Lock()
 		currentPiece.subPieceMask[subPieceBitMaskIndex] = utils.BitMask(currentPiece.subPieceMask[subPieceBitMaskIndex], []int{subPieceBitIndex}, 1)
@@ -221,15 +228,17 @@ func (file *TorrentFile) AddSubPiece(msg MSG, peer *Peer) error {
 			file.SelectNewPiece = true
 			for _,pos := range currentPiece.position{
 				_ = pos
-			//	currentFile := file.files[pos.fileIndex]
-			//	f, _ := os.OpenFile(utils.DawnTorrentHomeDir+"/"+currentFile.path, os.O_CREATE|os.O_RDWR, os.ModePerm)
+				currentFile := file.files[pos.fileIndex]
+				f, _ := os.OpenFile(utils.DawnTorrentHomeDir+"/"+currentFile.path, os.O_CREATE|os.O_RDWR, os.ModePerm)
 
 				//getting the length of the piece
-			//	pieceRelativeLen := pos.end-pos.start
-			//	pieceRelativeStart := pos.start-(currentPiece.PieceIndex*file.pieceLength)
-			//	pieceRelativeEnd := pieceRelativeStart+pieceRelativeLen
-			//	_, _ = f.WriteAt(currentPiece.Pieces[pieceRelativeStart:pieceRelativeEnd], int64(pos.writingIndex))
+				pieceRelativeLen := pos.end-pos.start
+				pieceRelativeStart := pos.start-(currentPiece.PieceIndex*file.pieceLength)
+				pieceRelativeEnd := pieceRelativeStart+pieceRelativeLen
+				_, _ = f.WriteAt(currentPiece.Pieces[pieceRelativeStart:pieceRelativeEnd], int64(pos.writingIndex))
 			}
+
+			currentPiece.Pieces = nil
 			//os.Exit(2222234)
 		} else {
 			currentPiece.Status = "inProgress"
@@ -259,6 +268,16 @@ type Piece struct {
 	pieceStartIndex int
 	pieceEndIndex int
 	position []pos
+	pendingRequestMutex *sync.RWMutex
+	pendingRequest	*hashmap.Map
+	requestFrom  *hashmap.Map
+}
+
+type pendingRequest struct {
+	peerID	string
+	startIndex int
+	timeStamp	time.Time
+	backUpPeers	*hashmap.Map
 }
 
 type pos struct {
