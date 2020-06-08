@@ -4,16 +4,17 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
-	"os"
+	"github.com/emirpasic/gods/lists/arraylist"
+	"github.com/emirpasic/gods/sets/hashset"
 	"time"
-	"torrent/utils"
+	"DawnTorrent/utils"
 
 	//"github.com/emirpasic/gods/lists/arraylist"
 	"github.com/emirpasic/gods/maps/hashmap"
 	"math"
 	"strconv"
 	"sync"
-	"torrent/parser"
+	"DawnTorrent/parser"
 )
 
 type TorrentFile struct {
@@ -42,6 +43,11 @@ type TorrentFile struct {
 	SelectNewPiece bool
 	CurrentPieceIndex int
 	torrent *Torrent
+	timeS    time.Time
+	totalDownloaded  int
+	pieceAvailabilityMutex *sync.RWMutex
+	PieceAvailability		*arraylist.List
+	PieceAvailabilityTimeStamp time.Time
 }
 
 type fileInfo struct {
@@ -98,7 +104,8 @@ func initTorrentFile(torrent *Torrent, torrentPath string) *TorrentFile {
 	file.nSubPiece = int(math.Ceil(float64(file.pieceLength)/float64(file.subPieceLen)))
 	file.nPiece = int(math.Ceil(float64(file.fileTotalLength)/float64(file.pieceLength)))
 	file.Pieces = make([]*Piece,file.nPiece)
-
+	file.PieceAvailability = arraylist.New()
+	file.pieceAvailabilityMutex = new(sync.RWMutex)
 	for i,_ := range file.Pieces {
 
 		pieceLen := file.pieceLength
@@ -111,9 +118,17 @@ func initTorrentFile(torrent *Torrent, torrentPath string) *TorrentFile {
 			}
 		}
 		file.Pieces[i] = NewPiece(file,i,pieceLen)
+		//file.Pieces[i].Availability = i
 		file.NeededPiece.Put(i,file.Pieces[i])
+		file.PieceAvailability.Add(file.Pieces[i])
 	}
+
+
 	pieceIndex := 0
+
+
+	// process overlapping pieces
+	// determine which subPiece belongs to a file and the position where it starts
 	for i:= 0; i < len(file.files);i++{
 		f := file.files[i]
 		pos := new(pos)
@@ -129,7 +144,6 @@ func initTorrentFile(torrent *Torrent, torrentPath string) *TorrentFile {
 				}
 
 		}
-
 
 	}
 
@@ -181,18 +195,50 @@ func GetInfoHash(dict *parser.Dict) string {
 func NewPiece(torrentFile *TorrentFile,PieceIndex,pieceLength int) *Piece {
 	newPiece := new(Piece)
 
-	newPiece.PieceTotalLen = pieceLength
+	newPiece.Len = pieceLength
 	newPiece.owners = make(map[string]*Peer)
 	newPiece.Availability = 0
 	newPiece.PieceIndex = PieceIndex
 	newPiece.pieceStartIndex = PieceIndex*torrentFile.pieceLength
 	newPiece.pieceEndIndex  = newPiece.pieceStartIndex+pieceLength
-	newPiece.Pieces = make([]byte, newPiece.PieceTotalLen)
+	newPiece.Pieces = make([]byte, newPiece.Len)
 	newPiece.Status = "empty"
 	newPiece.subPieceMask = make([]byte, int(math.Ceil(float64(torrentFile.nSubPiece)/float64(8))))
 	newPiece.pendingRequestMutex = new(sync.RWMutex)
 	newPiece.pendingRequest = hashmap.New()
+	newPiece.neededSubPiece = hashset.New()
+
+	newPiece.nSubPiece  = int(math.Ceil(float64(pieceLength)/float64(SubPieceLen)))
+
+	for i:= 0; i < newPiece.nSubPiece ; i++{
+		newPiece.neededSubPiece.Add(i)
+	}
+
 	return newPiece
+
+}
+
+
+func pieceAvailabilityComparator(a,b interface{}) int{
+	pieceA := a.(*Piece)
+	pieceB	:= b.(*Piece)
+
+	switch  {
+	case pieceA.Availability > pieceB.Availability:
+		return 1
+	case pieceA.Availability < pieceB.Availability:
+		return -1
+	default:
+		return 0
+	}
+}
+func (file *TorrentFile) SortPieceByAvailability(){
+	file.pieceAvailabilityMutex.Lock()
+	if time.Now().Sub(file.PieceAvailabilityTimeStamp) >= time.Second*2{
+		file.PieceAvailability.Sort(pieceAvailabilityComparator)
+		file.PieceAvailabilityTimeStamp = time.Now()
+	}
+	file.pieceAvailabilityMutex.Unlock()
 
 }
 func (file *TorrentFile) AddSubPiece(msg MSG, peer *Peer) error {
@@ -204,28 +250,29 @@ func (file *TorrentFile) AddSubPiece(msg MSG, peer *Peer) error {
 	subPieceBitIndex := subPieceIndex % 8
 	file.PiecesMutex.Lock()
 	isEmpty := utils.IsBitOn(currentPiece.subPieceMask[subPieceBitMaskIndex], subPieceBitIndex) == false
+	currentPiece.subPieceMask[subPieceBitMaskIndex] = utils.BitMask(currentPiece.subPieceMask[subPieceBitMaskIndex], []int{subPieceBitIndex}, 1)
 	file.PiecesMutex.Unlock()
 	currentPiece.pendingRequestMutex.Lock()
 	currentPiece.pendingRequest.Remove(msg.BeginIndex)
 	currentPiece.pendingRequestMutex.Unlock()
 	if isEmpty {
-		fmt.Printf("Piece COunter %v\n",file.torrent.PieceCounter)
+		//fmt.Printf("Piece COunter %v\n",file.DawnTorrent.PieceCounter)
 		file.torrent.PieceCounter++
 		currentPiece.CurrentLen += msg.PieceLen
-		println("msg.BeginIndex")
-		println(msg.BeginIndex)
+		file.totalDownloaded += msg.PieceLen
+		fmt.Printf("downloaded %v mb in %v \n",file.totalDownloaded/1000000.0, time.Now().Sub(file.timeS))
+
 		copy(currentPiece.Pieces[msg.BeginIndex:msg.BeginIndex+msg.PieceLen], msg.Piece)
-		file.PiecesMutex.Lock()
-		currentPiece.subPieceMask[subPieceBitMaskIndex] = utils.BitMask(currentPiece.subPieceMask[subPieceBitMaskIndex], []int{subPieceBitIndex}, 1)
-		file.PiecesMutex.Unlock()
+
 
 		// piece is complete add it to the file
-		isPieceComplete := currentPiece.PieceTotalLen == currentPiece.CurrentLen
+		isPieceComplete := currentPiece.Len == currentPiece.CurrentLen
 
 		if isPieceComplete {
 			file.NeededPiece.Remove(currentPiece.PieceIndex)
 			currentPiece.Status = "complete"
 			file.SelectNewPiece = true
+			/*
 			for _,pos := range currentPiece.position{
 				_ = pos
 				currentFile := file.files[pos.fileIndex]
@@ -237,10 +284,10 @@ func (file *TorrentFile) AddSubPiece(msg MSG, peer *Peer) error {
 				pieceRelativeEnd := pieceRelativeStart+pieceRelativeLen
 				_, _ = f.WriteAt(currentPiece.Pieces[pieceRelativeStart:pieceRelativeEnd], int64(pos.writingIndex))
 			}
-
-			currentPiece.Pieces = nil
-			//os.Exit(2222234)
+*/
+			currentPiece.Pieces = make([]byte,0)
 		} else {
+			fmt.Printf("not complete yet , %v/%v pieceindex : %v\n",currentPiece.Len,currentPiece.CurrentLen,currentPiece.PieceIndex)
 			currentPiece.Status = "inProgress"
 			file.SelectNewPiece = false
 		}
@@ -254,23 +301,26 @@ func (file *TorrentFile) AddSubPiece(msg MSG, peer *Peer) error {
 }
 
 type Piece struct {
-	fileIndex int
-	PieceTotalLen int
-	CurrentLen    int
-	SubPieceLen   int
-	Status        string
-	Pieces        []byte
-	PieceIndex    int
-	AbsIndex      int
-	Availability  int
-	owners        map[string]*Peer
-	subPieceMask  []byte
+	fileIndex       int
+	Len             int
+	CurrentLen      int
+	SubPieceLen     int
+	Status          string
+	Pieces          []byte
+	PieceIndex      int
+	Availability    int
+	owners          map[string]*Peer
+	subPieceMask    []byte
 	pieceStartIndex int
-	pieceEndIndex int
+	pieceEndIndex   int
 	position []pos
 	pendingRequestMutex *sync.RWMutex
 	pendingRequest	*hashmap.Map
 	requestFrom  *hashmap.Map
+	neededSubPiece *hashset.Set
+	nSubPiece int
+	AvailabilityIndex		int
+
 }
 
 type pendingRequest struct {

@@ -3,7 +3,7 @@ package parser
 import (
 	"io/ioutil"
 	"os"
-	"torrent/utils"
+	"DawnTorrent/utils"
 )
 
 

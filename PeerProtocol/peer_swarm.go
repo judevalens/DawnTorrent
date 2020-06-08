@@ -18,8 +18,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"torrent/parser"
-	"torrent/utils"
+	"DawnTorrent/parser"
+	"DawnTorrent/utils"
 )
 
 type PeerSwarm struct {
@@ -53,7 +53,7 @@ func NewPeerSwarm(torrent *Torrent) *PeerSwarm {
 	//newPeerSwarm.unChockedPeerMap = make(map[string]*Peer,0)
 	newPeerSwarm.activeConnectionMutex = new(sync.RWMutex)
 	newPeerSwarm.activeConnection = hashmap.New()
-	newPeerSwarm.maxConnection = 50
+	newPeerSwarm.maxConnection = 70
 	newPeerSwarm.nActiveConnection = new(int32)
 	atomic.AddInt32(newPeerSwarm.nActiveConnection, 0)
 	newPeerSwarm.torrent = torrent
@@ -78,7 +78,7 @@ func (peerSwarm *PeerSwarm) Listen() {
 				} else {
 					////println(peerSwarm.nActiveConnection)
 					//	//println(peerSwarm.maxConnection)
-					/////println("max connection reached!!!!!")
+					println("max connection reached!!!!!")
 				}
 			} else {
 				_ = connection.Close()
@@ -547,15 +547,16 @@ func (peer *Peer) receive(connection *net.TCPConn, peerSwarm *PeerSwarm) error {
 
 		if parserMsgErr == nil {
 			// TODO will probably use a worker pool here !
-			//peerSwarm.torrent.requestQueue.addJob(parsedMsg)
+			//peerSwarm.DawnTorrent.requestQueue.addJob(parsedMsg)
 			if parsedMsg.MsgID == PieceMsg {
-				peerSwarm.torrent.pieceQueue.Add(parsedMsg)
+				//peerSwarm.DawnTorrent.pieceQueue.Add(parsedMsg)
+				peerSwarm.torrent.msgRouter(parsedMsg)
 
 			}else{
 				peerSwarm.torrent.incomingMsgQueue.Add(parsedMsg)
 
 			}
-			//peerSwarm.torrent.msgRouter(parsedMsg)
+			//peerSwarm.DawnTorrent.msgRouter(parsedMsg)
 
 			if parsedMsg.MsgID == UnchockeMsg {
 				//os.Exit(213)

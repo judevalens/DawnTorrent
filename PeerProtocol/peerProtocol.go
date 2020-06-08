@@ -1,6 +1,7 @@
 package PeerProtocol
 
 import (
+	"fmt"
 	"log"
 	"math"
 	"math/rand"
@@ -8,8 +9,8 @@ import (
 	"sort"
 	"sync/atomic"
 	"time"
-	"torrent/parser"
-	"torrent/utils"
+	"DawnTorrent/parser"
+	"DawnTorrent/utils"
 )
 
 const (
@@ -17,7 +18,7 @@ const (
 	stoppedEvent   = "stopped"
 	completedEvent = "completed"
 	SubPieceLen    = 16384
-	maxWaitingTime = time.Second
+	maxWaitingTime = time.Millisecond*250
 	pieceHashLen   = 20
 	priority1      = 0
 	priority2      = -1
@@ -44,17 +45,17 @@ func NewTorrent(torrentPath string, done chan bool) *Torrent {
 
 	torrent := new(Torrent)
 	torrent.File = initTorrentFile(torrent, torrentPath)
-	println("torrent.File.infoHash")
+	println("DawnTorrent.File.infoHash")
 	println(torrent.File.infoHash)
 	torrent.PeerSwarm = NewPeerSwarm(torrent)
 	torrent.requestQueue = NewQueue(torrent)
 	torrent.incomingMsgQueue = NewQueue(torrent)
 	torrent.pieceQueue = NewQueue(torrent)
-	torrent.requestQueue.Run(12)
-	torrent.incomingMsgQueue.Run(2)
-	torrent.pieceQueue.Run(15)
+	torrent.requestQueue.Run(1)
+	torrent.incomingMsgQueue.Run(1)
+	torrent.pieceQueue.Run(1)
 
-	//torrent.worker()
+	//DawnTorrent.worker()
 	go torrent.SelectPiece()
 
 	return torrent
@@ -128,29 +129,51 @@ func (torrent *Torrent) TitForTat() {
 }
 func (torrent *Torrent) SelectPiece() {
 	start := 0
-	for {
+	torrent.File.timeS = time.Now()
 
+	for{
 		if torrent.File.currentPiece == nil || torrent.File.SelectNewPiece {
 			if torrent.File.behavior == "random" {
 				randomSeed := rand.New(rand.NewSource(time.Now().UnixNano()))
 				randN := randomSeed.Intn(torrent.File.NeededPiece.Size())
-				randomPiece, found := torrent.File.NeededPiece.Get(start)
-				_ = randN
-				if found {
-					torrent.File.currentPiece = randomPiece.(*Piece)
+
+
+				foundPiece := false
+
+
+				for !foundPiece{
+					torrent.File.SortPieceByAvailability()
+
+
+
+
+					torrent.File.pieceAvailabilityMutex.Lock()
+					mostAvailablePieceIndexI, _ := torrent.File.PieceAvailability.Get(start)
+					torrent.File.pieceAvailabilityMutex.Unlock()
+
+					mostAvailablePieceIndex := mostAvailablePieceIndexI.(*Piece).PieceIndex
+					pieceByAvailabilityI, found := torrent.File.NeededPiece.Get(mostAvailablePieceIndex)
+					_ = randN
+					if found {
+						pieceByAvailability :=	pieceByAvailabilityI.(*Piece)
+						torrent.File.currentPiece = pieceByAvailability
+						foundPiece = true
+						fmt.Printf(" mostAvailablePieceIndexI %v \n", mostAvailablePieceIndex)
+						torrent.File.CurrentPieceIndex = mostAvailablePieceIndex
+					}
+					start++
+
 				}
 
 				torrent.File.SelectNewPiece = false
-				torrent.File.CurrentPieceIndex = start
 				torrent.PieceCounter = 0
-				start++
 
 			} else if torrent.File.behavior == "rarest" {
-				//torrent.File.sortPieces()
-				//rarestPieceIndex := torrent.File.SortedAvailability[torrent.File.nPiece-1]
-				//torrent.File.PiecesMutex.RLock()
-				//torrent.File.currentPiece = torrent.File.Pieces[rarestPieceIndex]
-				//torrent.File.PiecesMutex.RUnlock()
+				//DawnTorrent.File.sortPieces()
+				//rarestPieceIndex := DawnTorrent.File.SortedAvailability[DawnTorrent.File.nPiece-1]
+				//DawnTorrent.File.PiecesMutex.RLock()
+				//DawnTorrent.File.currentPiece = DawnTorrent.File.Pieces[rarestPieceIndex]
+				//DawnTorrent.File.PiecesMutex.RUnlock()
 			}
 			torrent.File.currentPiece.Status = "inProgress"
 		}
@@ -169,6 +192,7 @@ func (torrent *Torrent) SelectPiece() {
 			randPeers := randSeed.Perm(len(activeConnection))
 
 			peersIndex := 0
+			requestSent := 0
 			currentPiece := torrent.File.Pieces[torrent.File.CurrentPieceIndex]
 			for i := 0; i < torrent.File.nSubPiece; i++ {
 
@@ -193,50 +217,50 @@ func (torrent *Torrent) SelectPiece() {
 					beginIndex := i * torrent.File.subPieceLen
 					msg := MSG{MsgID: RequestMsg, PieceIndex: torrent.File.CurrentPieceIndex, BeginIndex: beginIndex, PieceLen: subPieceLen}
 
-
-
 					pieceRequest := GetMsg(msg, nil)
 					currentPiece.pendingRequestMutex.Lock()
 					blockRequestInterface, foundBlockRequest := currentPiece.pendingRequest.Get(beginIndex)
 					currentPiece.pendingRequestMutex.Unlock()
 
-					if len(activeConnection) > 0{
+					if len(activeConnection) > 0 {
 
-					if foundBlockRequest{
+						if foundBlockRequest {
 
-						blockRequest := blockRequestInterface.(*pendingRequest)
-						if time.Now().Sub(blockRequest.timeStamp) > maxWaitingTime{
-						///	fmt.Printf("found request for %v\n", beginIndex)
-							var peer *Peer
-							 counter := 0
+							blockRequest := blockRequestInterface.(*pendingRequest)
+							if time.Now().Sub(blockRequest.timeStamp) > maxWaitingTime {
+								///	fmt.Printf("found request for %v\n", beginIndex)
+								var peer *Peer
+								counter := 0
 								randN := randSeed.Intn(len(activeConnection))
 
 								peer = activeConnection[randN].(*Peer)
 								counter++
 
-							if peer != nil {
+								if peer != nil {
 
 									pieceRequest.Peer = peer
 									torrent.pieceQueue.Add(pieceRequest)
+
 									blockRequest.timeStamp = time.Now()
+									requestSent++
+								}
 
 							}
-
-						}
-					}else{
-						//	fmt.Printf("active Peer %v\n", torrent.PeerSwarm.activeConnection.Size())
+						} else {
+							//	fmt.Printf("active Peer %v\n", DawnTorrent.PeerSwarm.activeConnection.Size())
 							pieceRequest.Peer = activeConnection[randPeers[peersIndex]].(*Peer)
 
 							c := 0
-							for c < 1 && c < len(activeConnection){
+							for c < 5 && c < len(activeConnection) {
 								pieceRequest.Peer = activeConnection[randPeers[peersIndex]].(*Peer)
 								torrent.pieceQueue.Add(pieceRequest)
 								peersIndex++
 								peersIndex = len(activeConnection) % peersIndex
 								c++
+								requestSent++
 							}
 
-							//torrent.pieceQueue.Add(pieceRequest)
+							//DawnTorrent.pieceQueue.Add(pieceRequest)
 							pendingRequest := new(pendingRequest)
 							pendingRequest.peerID = pieceRequest.Peer.id
 							pendingRequest.startIndex = beginIndex
@@ -251,13 +275,15 @@ func (torrent *Torrent) SelectPiece() {
 
 						}
 
-					}else{
+					} else {
 						println("not enough peer")
 					}
 
 				}
-
 			}
+
+				}
+
 
 		}
 
@@ -265,11 +291,10 @@ func (torrent *Torrent) SelectPiece() {
 		// right we select the next piece download randomly
 		// after download the first four pieces randomly, we should select the next nth piece based on its rarity
 		/*
-			if len(torrent.File.completedPieceIndex) > 4 {
-				torrent.File.behavior = "rarest"
+			if len(DawnTorrent.File.completedPieceIndex) > 4 {
+				DawnTorrent.File.behavior = "rarest"
 			}*/
 
-	}
 
 }
 
@@ -277,11 +302,9 @@ func (torrent *Torrent) msgRouter(msg MSG) {
 
 	switch msg.MsgID {
 	case BitfieldMsg:
-		//fmt.Printf("%v", msg.BitfieldRaw)
 		// gotta check that bitfield is the correct len
-		bitfieldLen := torrent.File.nPiece*8
-		if msg.PieceLen == bitfieldLen{
-			bitfieldCorrectLen := int(math.Ceil(float64(torrent.File.nPiece) / 8.0))
+		bitfieldCorrectLen := int(math.Ceil(float64(torrent.File.nPiece) / 8.0))
+
 			counter := 0
 			if (len(msg.BitfieldRaw)) == bitfieldCorrectLen {
 
@@ -306,60 +329,62 @@ func (torrent *Torrent) msgRouter(msg MSG) {
 						}
 						torrent.PeerSwarm.peerMutex.Unlock()
 
+						// if piece available we put in the sorted map
+
 						if isPieceAvailable {
-							torrent.File.PiecesMutex.Lock()
+
+							torrent.File.pieceAvailabilityMutex.Lock()
 							torrent.File.Pieces[pieceIndex].Availability++
-							if torrent.File.Pieces[pieceIndex].Status != "complete" {
-								torrent.File.Pieces[pieceIndex].owners[msg.Peer.id] = msg.Peer
-
-								torrent.PeerSwarm.peerMutex.Lock()
-								if !msg.Peer.peerIsInteresting {
-									msg.Peer.peerIsInteresting = true
-									torrent.requestQueue.Add(GetMsg(MSG{MsgID: InterestedMsg}, msg.Peer))
-
-								}
-								torrent.PeerSwarm.peerMutex.Unlock()
-							}
-							torrent.File.PiecesMutex.Unlock()
-
+							torrent.File.pieceAvailabilityMutex.Unlock()
 						}
 						pieceIndex++
 						bitIndex--
 					}
 
 				}
-			}
+			}else{
+				fmt.Printf("correctlen %v actual Len %v",bitfieldCorrectLen,len(msg.BitfieldRaw) )
 		}
+
+
+		torrent.File.SortPieceByAvailability()
+
+
 	case InterestedMsg:
+		torrent.PeerSwarm.peerMutex.Lock()
 		msg.Peer.interested = true
+		torrent.PeerSwarm.peerMutex.Unlock()
+
 	case UninterestedMsg:
-
+		torrent.PeerSwarm.peerMutex.Lock()
 		msg.Peer.interested = false
-	case UnchockeMsg:
-		msg.Peer.peerIsChocking = false
-	case ChockedMsg:
-		msg.Peer.peerIsChocking = true
-	case PieceMsg:
-		if msg.PieceIndex < torrent.File.nPiece {
+		torrent.PeerSwarm.peerMutex.Unlock()
 
-			if msg.PieceLen == torrent.File.subPieceLen || msg.PieceLen == torrent.File.Pieces[1].PieceTotalLen%torrent.File.subPieceLen {
+	case UnchockeMsg:
+		torrent.PeerSwarm.peerMutex.Lock()
+		msg.Peer.peerIsChocking = false
+		torrent.PeerSwarm.peerMutex.Unlock()
+
+	case ChockedMsg:
+		torrent.PeerSwarm.peerMutex.Lock()
+		msg.Peer.peerIsChocking = true
+		torrent.PeerSwarm.peerMutex.Unlock()
+	case PieceMsg:
+		// making sure that we are receiving a valid piece index
+		if msg.PieceIndex < torrent.File.nPiece {
+			// verifies that the length of the data is not greater or smaller than amount requested
+			if msg.PieceLen == torrent.File.subPieceLen || msg.PieceLen == torrent.File.Pieces[msg.PieceLen].Len%torrent.File.subPieceLen {
 				_ = torrent.File.AddSubPiece(msg, msg.Peer)
 		}
-
-
-
 		}
 
 	case HaveMsg:
 		if msg.MsgLen == haveMsgLen && msg.PieceIndex < torrent.File.nPiece{
-			torrent.File.PiecesMutex.Lock()
+			torrent.File.pieceAvailabilityMutex.Lock()
 			torrent.File.Pieces[msg.PieceIndex].Availability++
-			if torrent.File.Pieces[msg.PieceIndex].Status != "complete" {
-				torrent.PeerSwarm.peerMutex.Lock()
-				torrent.File.Pieces[msg.PieceIndex].owners[msg.Peer.id] = msg.Peer
-				torrent.PeerSwarm.peerMutex.Unlock()
-			}
-			torrent.File.PiecesMutex.Unlock()
+			torrent.File.pieceAvailabilityMutex.Unlock()
+			torrent.File.SortPieceByAvailability()
+
 		}
 
 	}

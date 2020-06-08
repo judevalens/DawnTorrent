@@ -16,7 +16,7 @@ import (
 )
 
 const DEBUG = true
-const PORT = 6881
+const PORT = 63400
 const PORT2 = 6884
 const UpFlag = "up"
 
@@ -143,7 +143,7 @@ func forwardPort(port string) {
 
 	}
 
-	ip := connectionClient[0].AddPortMapping("", PORT, "tcp", PORT, LocalAddress().String(), true, "for torrent 2", 100000)
+	ip := connectionClient[0].AddPortMapping("", PORT, "tcp", PORT, LocalAddress().String(), true, "for DawnTorrent 2", 100000)
 
 	fmt.Printf("len %v name %v\n", len(connectionClient), ip)
 
