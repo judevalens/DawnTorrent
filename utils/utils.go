@@ -29,7 +29,7 @@ var KeepAliveDuration, _ = time.ParseDuration("120s")
 
 var homeDir, _ = os.UserHomeDir()
 
-var	DawnTorrentHomeDir = homeDir + "/DawnTorrent"
+var	TorrentHomeDir = homeDir + "/DawnTorrent"
 
 func GetRandomId() string {
 	PeerIDLength := 20
@@ -130,6 +130,8 @@ func flipBit(b uint8) uint8 {
 	return a
 }
 
+
+
 /// That's a work in progress
 /// for now I will manually forward the port
 
@@ -143,7 +145,7 @@ func forwardPort(port string) {
 
 	}
 
-	ip := connectionClient[0].AddPortMapping("", PORT, "tcp", PORT, LocalAddress().String(), true, "for DawnTorrent 2", 100000)
+	ip := connectionClient[0].AddPortMapping("", PORT, "tcp", PORT, LocalAddress().String(), true, "for torrent 2", 100000)
 
 	fmt.Printf("len %v name %v\n", len(connectionClient), ip)
 

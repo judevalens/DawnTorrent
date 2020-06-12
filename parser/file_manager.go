@@ -13,8 +13,8 @@ const (
 
 
 func SaveTorrentFile(file []byte, fileName string) {
-	_ = os.Mkdir(utils.DawnTorrentHomeDir, os.ModeDir)
-	fileName = utils.DawnTorrentHomeDir + "/" + fileName
+	_ = os.Mkdir(utils.TorrentHomeDir, os.ModeDir)
+	fileName = utils.TorrentHomeDir + "/" + fileName
 	_ = ioutil.WriteFile(fileName, file, 777)
 
 }

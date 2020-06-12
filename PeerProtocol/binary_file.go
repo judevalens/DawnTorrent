@@ -1,20 +1,25 @@
 package PeerProtocol
 
 import (
+	"DawnTorrent/parser"
+	"DawnTorrent/utils"
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
 	"github.com/emirpasic/gods/lists/arraylist"
-	"github.com/emirpasic/gods/sets/hashset"
+	"os"
 	"time"
-	"DawnTorrent/utils"
-
 	//"github.com/emirpasic/gods/lists/arraylist"
 	"github.com/emirpasic/gods/maps/hashmap"
 	"math"
 	"strconv"
 	"sync"
-	"DawnTorrent/parser"
+)
+
+const (
+	completedRequest = 2
+	pendingRequest = 1
+	nonStartedRequest = 0
 )
 
 type TorrentFile struct {
@@ -103,6 +108,8 @@ func initTorrentFile(torrent *Torrent, torrentPath string) *TorrentFile {
 	file.subPieceLen = int(math.Min(float64(file.pieceLength), SubPieceLen))
 	file.nSubPiece = int(math.Ceil(float64(file.pieceLength)/float64(file.subPieceLen)))
 	file.nPiece = int(math.Ceil(float64(file.fileTotalLength)/float64(file.pieceLength)))
+	fmt.Printf("nPieces %v",file.nPiece)
+
 	file.Pieces = make([]*Piece,file.nPiece)
 	file.PieceAvailability = arraylist.New()
 	file.pieceAvailabilityMutex = new(sync.RWMutex)
@@ -126,7 +133,6 @@ func initTorrentFile(torrent *Torrent, torrentPath string) *TorrentFile {
 
 	pieceIndex := 0
 
-
 	// process overlapping pieces
 	// determine which subPiece belongs to a file and the position where it starts
 	for i:= 0; i < len(file.files);i++{
@@ -148,6 +154,7 @@ func initTorrentFile(torrent *Torrent, torrentPath string) *TorrentFile {
 	}
 
 	file.behavior = "random"
+	file.SelectNewPiece = true
 	return file
 }
 
@@ -200,18 +207,32 @@ func NewPiece(torrentFile *TorrentFile,PieceIndex,pieceLength int) *Piece {
 	newPiece.Availability = 0
 	newPiece.PieceIndex = PieceIndex
 	newPiece.pieceStartIndex = PieceIndex*torrentFile.pieceLength
-	newPiece.pieceEndIndex  = newPiece.pieceStartIndex+pieceLength
+	newPiece.pieceEndIndex  = newPiece.pieceStartIndex+newPiece.Len
 	newPiece.Pieces = make([]byte, newPiece.Len)
 	newPiece.Status = "empty"
 	newPiece.subPieceMask = make([]byte, int(math.Ceil(float64(torrentFile.nSubPiece)/float64(8))))
 	newPiece.pendingRequestMutex = new(sync.RWMutex)
-	newPiece.pendingRequest = hashmap.New()
-	newPiece.neededSubPiece = hashset.New()
+	newPiece.pendingRequest = make([]*PieceRequest,0)
 
 	newPiece.nSubPiece  = int(math.Ceil(float64(pieceLength)/float64(SubPieceLen)))
-
+	newPiece.neededSubPiece = make([]*PieceRequest,newPiece.nSubPiece)
 	for i:= 0; i < newPiece.nSubPiece ; i++{
-		newPiece.neededSubPiece.Add(i)
+		newPiece.SubPieceLen = torrentFile.subPieceLen
+		if i == newPiece.nSubPiece-1 {
+			if newPiece.Len%torrentFile.subPieceLen != 0 {
+				newPiece.SubPieceLen = newPiece.Len % torrentFile.subPieceLen
+				println(newPiece.SubPieceLen)
+			}
+		}
+		pendingRequest := new(PieceRequest)
+		pendingRequest.startIndex = i*newPiece.SubPieceLen
+
+		msg := MSG{MsgID: RequestMsg, PieceIndex: newPiece.PieceIndex, BeginIndex: pendingRequest.startIndex, PieceLen: newPiece.SubPieceLen}
+
+		pendingRequest.msg = GetMsg(msg,nil)
+		pendingRequest.status = nonStartedRequest
+		pendingRequest.subPieceIndex = i
+		newPiece.neededSubPiece[i] = pendingRequest
 	}
 
 	return newPiece
@@ -234,15 +255,37 @@ func pieceAvailabilityComparator(a,b interface{}) int{
 }
 func (file *TorrentFile) SortPieceByAvailability(){
 	file.pieceAvailabilityMutex.Lock()
-	if time.Now().Sub(file.PieceAvailabilityTimeStamp) >= time.Second*2{
+	if time.Now().Sub(file.PieceAvailabilityTimeStamp) >= time.Second*5{
 		file.PieceAvailability.Sort(pieceAvailabilityComparator)
 		file.PieceAvailabilityTimeStamp = time.Now()
 	}
 	file.pieceAvailabilityMutex.Unlock()
-
 }
 func (file *TorrentFile) AddSubPiece(msg MSG, peer *Peer) error {
 	var err error = nil
+
+
+	msg.Peer.peerPendingRequestMutex.Lock()
+
+	nPendingRequest := len(msg.Peer.peerPendingRequest)
+
+	for i:=  nPendingRequest; i >= 0; i++{
+
+		if i < len(msg.Peer.peerPendingRequest){
+			pendingRequest := msg.Peer.peerPendingRequest[i]
+
+			if pendingRequest.startIndex == msg.BeginIndex{
+				pendingRequest.status = completedRequest
+				msg.Peer.peerPendingRequest[i], msg.Peer.peerPendingRequest[len(msg.Peer.peerPendingRequest)-1] = msg.Peer.peerPendingRequest[len(peer.peerPendingRequest)-1],nil
+				msg.Peer.peerPendingRequest = msg.Peer.peerPendingRequest[:len(msg.Peer.peerPendingRequest)-1]
+				break
+			}
+		}else{
+			break
+		}
+	}
+
+	msg.Peer.peerPendingRequestMutex.Unlock()
 
 	currentPiece := file.Pieces[msg.PieceIndex]
 	subPieceIndex := int(math.Ceil(float64(msg.BeginIndex / SubPieceLen)))
@@ -252,13 +295,31 @@ func (file *TorrentFile) AddSubPiece(msg MSG, peer *Peer) error {
 	isEmpty := utils.IsBitOn(currentPiece.subPieceMask[subPieceBitMaskIndex], subPieceBitIndex) == false
 	currentPiece.subPieceMask[subPieceBitMaskIndex] = utils.BitMask(currentPiece.subPieceMask[subPieceBitMaskIndex], []int{subPieceBitIndex}, 1)
 	file.PiecesMutex.Unlock()
-	currentPiece.pendingRequestMutex.Lock()
-	currentPiece.pendingRequest.Remove(msg.BeginIndex)
-	currentPiece.pendingRequestMutex.Unlock()
+
+
+
 	if isEmpty {
-		//fmt.Printf("Piece COunter %v\n",file.DawnTorrent.PieceCounter)
+		if msg.PieceIndex != file.CurrentPieceIndex{
+			fmt.Printf("msg Piece Index %v current Piece Index %v",msg.PieceIndex,file.CurrentPieceIndex)
+			os.Exit(223444)
+		}
+
+		currentPiece.pendingRequestMutex.Lock()
+		for i := len(currentPiece.pendingRequest)-1; i >= 0; i--{
+
+				if msg.BeginIndex == currentPiece.pendingRequest[i].startIndex{
+					currentPiece.pendingRequest[i], currentPiece.pendingRequest[len(currentPiece.pendingRequest)-1] = currentPiece.pendingRequest[len(currentPiece.pendingRequest)-1],nil
+
+					currentPiece.pendingRequest= currentPiece.pendingRequest[:len(currentPiece.pendingRequest)-1]
+
+					break
+				}
+		}
+		currentPiece.pendingRequestMutex.Unlock()
+
+		///fmt.Printf("Piece COunter %v\n",file.torrent.PieceCounter)
 		file.torrent.PieceCounter++
-		currentPiece.CurrentLen += msg.PieceLen
+		currentPiece.CurrentLen += len(msg.Piece)
 		file.totalDownloaded += msg.PieceLen
 		fmt.Printf("downloaded %v mb in %v \n",file.totalDownloaded/1000000.0, time.Now().Sub(file.timeS))
 
@@ -266,17 +327,19 @@ func (file *TorrentFile) AddSubPiece(msg MSG, peer *Peer) error {
 
 
 		// piece is complete add it to the file
+		file.PiecesMutex.Lock()
 		isPieceComplete := currentPiece.Len == currentPiece.CurrentLen
-
+		file.PiecesMutex.Unlock()
 		if isPieceComplete {
 			file.NeededPiece.Remove(currentPiece.PieceIndex)
 			currentPiece.Status = "complete"
 			file.SelectNewPiece = true
-			/*
+		//	fmt.Printf("piece %v is complete\n",currentPiece.PieceIndex)
+
 			for _,pos := range currentPiece.position{
 				_ = pos
 				currentFile := file.files[pos.fileIndex]
-				f, _ := os.OpenFile(utils.DawnTorrentHomeDir+"/"+currentFile.path, os.O_CREATE|os.O_RDWR, os.ModePerm)
+				f, _ := os.OpenFile(utils.TorrentHomeDir+"/"+currentFile.path, os.O_CREATE|os.O_RDWR, os.ModePerm)
 
 				//getting the length of the piece
 				pieceRelativeLen := pos.end-pos.start
@@ -284,19 +347,33 @@ func (file *TorrentFile) AddSubPiece(msg MSG, peer *Peer) error {
 				pieceRelativeEnd := pieceRelativeStart+pieceRelativeLen
 				_, _ = f.WriteAt(currentPiece.Pieces[pieceRelativeStart:pieceRelativeEnd], int64(pos.writingIndex))
 			}
-*/
-			currentPiece.Pieces = make([]byte,0)
+
+		currentPiece.Pieces = make([]byte,0)
 		} else {
-			fmt.Printf("not complete yet , %v/%v pieceindex : %v\n",currentPiece.Len,currentPiece.CurrentLen,currentPiece.PieceIndex)
+		//	fmt.Printf("not complete yet , %v/%v pieceindex : %v\n",currentPiece.Len,currentPiece.CurrentLen,currentPiece.PieceIndex)
 			currentPiece.Status = "inProgress"
 			file.SelectNewPiece = false
 		}
 	}
 
-	//peer.numByteDownloaded += int(msg.PieceLen)
-	//peer.lastTimeStamp = time.Now()
-	//peer.time += time.Now().Sub(peer.lastTimeStamp).Seconds()
-	//peer.DownloadRate = (float64(peer.numByteDownloaded)) / peer.time
+
+
+	if time.Now().Sub(peer.lastTimeStamp) >= (time.Second*10) {
+		d := time.Now().Sub(peer.lastTimeStamp).Seconds()
+		peer.DownloadRate = float64(peer.numByteDownloaded) / d
+		peer.numByteDownloaded = msg.PieceLen
+		peer.lastTimeStamp = time.Now()
+
+
+	}else{
+		peer.numByteDownloaded += msg.PieceLen
+	}
+
+
+//	fmt.Printf("peer: %v , download rate: %v byte/s \n",msg.Peer.ip,peer.DownloadRate)
+
+
+
 	return err
 }
 
@@ -315,20 +392,26 @@ type Piece struct {
 	pieceEndIndex   int
 	position []pos
 	pendingRequestMutex *sync.RWMutex
-	pendingRequest	*hashmap.Map
+	pendingRequest	[]*PieceRequest
 	requestFrom  *hashmap.Map
-	neededSubPiece *hashset.Set
+	neededSubPiece []*PieceRequest
 	nSubPiece int
 	AvailabilityIndex		int
 
 }
 
-type pendingRequest struct {
+type PieceRequest struct {
 	peerID	string
 	startIndex int
 	timeStamp	time.Time
 	backUpPeers	*hashmap.Map
+	len int
+	msg MSG
+	status int
+	subPieceIndex int
 }
+
+
 
 type pos struct {
 	fileIndex int
