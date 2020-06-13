@@ -64,8 +64,6 @@ type fileInfo struct {
 
 }
 
-
-
 func initTorrentFile(torrent *Torrent, torrentPath string) *TorrentFile {
 	file := new(TorrentFile)
 	file.torrent = torrent
@@ -122,6 +120,7 @@ func initTorrentFile(torrent *Torrent, torrentPath string) *TorrentFile {
 				println("pieceLen")
 				println(pieceLen)
 				println(file.fileTotalLength)
+
 			}
 		}
 		file.Pieces[i] = NewPiece(file,i,pieceLen)
@@ -198,7 +197,8 @@ func GetInfoHash(dict *parser.Dict) string {
 	return string(bSlice)
 
 }
-// TODO clean up later
+
+//	Creates a Piece object and initialize subPieceRequest for this piece
 func NewPiece(torrentFile *TorrentFile,PieceIndex,pieceLength int) *Piece {
 	newPiece := new(Piece)
 
@@ -214,18 +214,29 @@ func NewPiece(torrentFile *TorrentFile,PieceIndex,pieceLength int) *Piece {
 	newPiece.pendingRequestMutex = new(sync.RWMutex)
 	newPiece.pendingRequest = make([]*PieceRequest,0)
 
-	newPiece.nSubPiece  = int(math.Ceil(float64(pieceLength)/float64(SubPieceLen)))
+	newPiece.nSubPiece  = int(math.Ceil(float64(pieceLength)/float64(torrentFile.subPieceLen)))
 	newPiece.neededSubPiece = make([]*PieceRequest,newPiece.nSubPiece)
 	for i:= 0; i < newPiece.nSubPiece ; i++{
 		newPiece.SubPieceLen = torrentFile.subPieceLen
 		if i == newPiece.nSubPiece-1 {
 			if newPiece.Len%torrentFile.subPieceLen != 0 {
 				newPiece.SubPieceLen = newPiece.Len % torrentFile.subPieceLen
+				println("newPiece.SubPieceLen")
 				println(newPiece.SubPieceLen)
+				fmt.Printf("pieceLen %v\n",newPiece.Len )
+
+				if newPiece.Len != 1048576 {
+
+				//	os.Exit(2828)
+
+				}
 			}
 		}
+
+
 		pendingRequest := new(PieceRequest)
-		pendingRequest.startIndex = i*newPiece.SubPieceLen
+
+		pendingRequest.startIndex = i*SubPieceLen
 
 		msg := MSG{MsgID: RequestMsg, PieceIndex: newPiece.PieceIndex, BeginIndex: pendingRequest.startIndex, PieceLen: newPiece.SubPieceLen}
 
@@ -261,7 +272,7 @@ func (file *TorrentFile) SortPieceByAvailability(){
 	}
 	file.pieceAvailabilityMutex.Unlock()
 }
-func (file *TorrentFile) AddSubPiece(msg MSG, peer *Peer) error {
+func (file *TorrentFile) AddSubPiece(msg *MSG, peer *Peer) error {
 	var err error = nil
 
 
@@ -406,12 +417,10 @@ type PieceRequest struct {
 	timeStamp	time.Time
 	backUpPeers	*hashmap.Map
 	len int
-	msg MSG
+	msg *MSG
 	status int
 	subPieceIndex int
 }
-
-
 
 type pos struct {
 	fileIndex int

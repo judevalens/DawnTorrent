@@ -2,13 +2,10 @@ package PeerProtocol
 
 import (
 	"DawnTorrent/parser"
-	"DawnTorrent/utils"
 	"errors"
 	"fmt"
-	"log"
 	"math"
 	"math/rand"
-	"os"
 	"sort"
 	"sync/atomic"
 	"time"
@@ -18,7 +15,7 @@ const (
 	startedEvent   = "started"
 	stoppedEvent   = "stopped"
 	completedEvent = "completed"
-	SubPieceLen    = 16384
+	SubPieceLen    = 16000
 	maxWaitingTime = time.Millisecond*200
 	maxRequest	= 5
 	pieceHashLen   = 20
@@ -58,8 +55,8 @@ func NewTorrent(torrentPath string, done chan bool) *Torrent {
 	torrent.pieceQueue.Run(10)
 
 	//torrent.worker()
-	go torrent.SelectPiece()
-	go torrent.requestPieceManager()
+//	go torrent.SelectPiece()
+	go torrent.PieceRequestManager()
 
 	return torrent
 }
@@ -165,6 +162,10 @@ func (torrent *Torrent) SelectPiece() {
 
 }
 
+
+//	Adds a request for piece a request to the a job Queue
+//	Params :
+//	subPieceRequest *PieceRequest : contains the raw request msg
 func (torrent *Torrent)requestPiece(subPieceRequest *PieceRequest)error{
 	go torrent.PeerSwarm.SortPeerByDownloadRate()
 	var err error
@@ -224,18 +225,48 @@ func (torrent *Torrent)requestPiece(subPieceRequest *PieceRequest)error{
 	return err
 }
 
-func (torrent *Torrent) requestPieceManager(){
+
+//	Selects Pieces that need to be downloader
+//	When a piece is completely downloaded , a new one is selected
+func (torrent *Torrent) PieceRequestManager(){
+	start := 0
+	torrent.File.timeS = time.Now()
 
 	for  {
+		// selects a new piece to download
+		if torrent.File.SelectNewPiece {
+			if torrent.File.behavior == "random" {
+				torrent.File.PiecesMutex.Lock()
+				torrent.File.CurrentPieceIndex = start
+				torrent.File.PiecesMutex.Unlock()
+				fmt.Printf("switching piece # %v\n", torrent.File.CurrentPieceIndex)
+				start++
+
+				torrent.File.SelectNewPiece = false
+				torrent.PieceCounter = 0
+
+			} else if torrent.File.behavior == "rarest" {
+				//torrent.File.sortPieces()
+				//rarestPieceIndex := torrent.File.SortedAvailability[torrent.File.nPiece-1]
+				//torrent.File.PiecesMutex.RLock()
+				//torrent.File.currentPiece = torrent.File.Pieces[rarestPieceIndex]
+				//torrent.File.PiecesMutex.RUnlock()
+			}
+		}
+
+		//	store the pieces that is being downloaded
 		torrent.File.PiecesMutex.Lock()
 		currentPiece := torrent.File.Pieces[torrent.File.CurrentPieceIndex]
 		torrent.File.PiecesMutex.Unlock()
 
+
 		currentPiece.pendingRequestMutex.Lock()
 		nSubPieceRequest := len(currentPiece.pendingRequest)
 		currentPiece.pendingRequestMutex.Unlock()
-		//fmt.Printf("pieceIndex %v, nRequest %v needeSubpieceLen %v pending Request %v\n",currentPiece.PieceIndex,nSubPieceRequest,len(currentPiece.neededSubPiece),len(currentPiece.pendingRequest))
-		//fmt.Printf("total Len %v, current len %v \n",currentPiece.Len,currentPiece.CurrentLen)
+
+
+		//	the number of subPiece request shall not exceed maxRequest
+		//	new requests are sent if the previous request have been fulfilled
 		if nSubPieceRequest < maxRequest{
 			nReq := maxRequest-len(currentPiece.pendingRequest)
 
@@ -246,6 +277,7 @@ func (torrent *Torrent) requestPieceManager(){
 			randomSeed := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 			for i < nReq{
+				// 	subPieces request are randomly selected
 				randomN := randomSeed.Intn(len(currentPiece.neededSubPiece))
 
 				currentPiece.pendingRequestMutex.Lock()
@@ -254,13 +286,11 @@ func (torrent *Torrent) requestPieceManager(){
 				//fmt.Printf("sending request\n")
 				err := torrent.requestPiece(req)
 
+				// once a request is added to the job queue, it is removed from the needed subPiece / prevents from being reselected
 				if err == nil{
-					// Remove the element at index i from a.
 					currentPiece.neededSubPiece[randomN] = currentPiece.neededSubPiece[len(currentPiece.neededSubPiece)-1]
 					currentPiece.neededSubPiece[len(currentPiece.neededSubPiece)-1] = nil
 					currentPiece.neededSubPiece = currentPiece.neededSubPiece[:len(currentPiece.neededSubPiece)-1]
-					//fmt.Printf("removing request #%v\n",len(currentPiece.neededSubPiece))
-
 				}
 				currentPiece.pendingRequestMutex.Unlock()
 				i++
@@ -269,11 +299,12 @@ func (torrent *Torrent) requestPieceManager(){
 		}
 		currentPiece.pendingRequestMutex.Lock()
 
+		// re-sends request that have been pending for a certain amounts of time
 		nPendingRequest := len(currentPiece.pendingRequest)
 
 		for r := 0; r < nPendingRequest; r++{
 			pendingRequest := currentPiece.pendingRequest[r]
-			//fmt.Printf("sending request\n")
+
 
 			if time.Now().Sub(pendingRequest.timeStamp) > maxWaitingTime{
 				//fmt.Printf("sending request\n")
@@ -282,13 +313,13 @@ func (torrent *Torrent) requestPieceManager(){
 		}
 		currentPiece.pendingRequestMutex.Unlock()
 
-
-
 		time.Sleep(time.Millisecond*25)
 	}
 }
 
-func (torrent *Torrent) msgRouter(msg MSG) {
+
+//	Receives msg from other peers and calls the appropriate methods
+func (torrent *Torrent) msgRouter(msg *MSG) {
 
 	switch msg.MsgID {
 	case BitfieldMsg:
@@ -361,7 +392,7 @@ func (torrent *Torrent) msgRouter(msg MSG) {
 		// making sure that we are receiving a valid piece index
 		if msg.PieceIndex < torrent.File.nPiece {
 			// verifies that the length of the data is not greater or smaller than amount requested
-			if msg.PieceLen == torrent.File.subPieceLen || msg.PieceLen == torrent.File.Pieces[msg.PieceLen].Len%torrent.File.subPieceLen {
+			if msg.PieceLen == torrent.File.subPieceLen || msg.PieceLen == torrent.File.Pieces[msg.PieceIndex].Len%torrent.File.subPieceLen {
 				_ = torrent.File.AddSubPiece(msg, msg.Peer)
 			}
 		}
@@ -379,27 +410,13 @@ func (torrent *Torrent) msgRouter(msg MSG) {
 
 }
 
-func (torrent *Torrent) saveTorrent() {
-}
-
-// assembles a complete piece
-// writes piece to the file once completed
-
-func (torrent *Torrent) savePieces() {
-
-	_, fileErr := os.OpenFile(utils.TorrentHomeDir+"/"+torrent.torrentMetaInfo.MapDict["info"].MapString["name"], os.O_CREATE|os.O_RDWR, os.ModePerm)
-
-	if fileErr != nil {
-		log.Fatal(fileErr)
-	}
-}
 
 func (torrent *Torrent) Worker(queue *Queue, id int) {
 	for {
 		request := queue.Pop()
 		switch item := request.(type) {
 
-		case MSG:
+		case *MSG:
 
 			switch item.msgType {
 			case outgoingMsg:

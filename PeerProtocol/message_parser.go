@@ -106,9 +106,9 @@ type udpMSG struct {
 	
 }
 
-func GetMsg(msg MSG, peer *Peer) MSG {
+func GetMsg(msg MSG, peer *Peer) *MSG {
 	var msgByte = make([]byte, 0)
-	msgStruct := MSG{}
+	msgStruct := new(MSG)
 	msgStruct.Peer = peer
 	msgStruct.msgType = outgoingMsg
 	msgStruct.MsgID = msg.MsgID
@@ -149,8 +149,8 @@ func GetMsg(msg MSG, peer *Peer) MSG {
 	return msgStruct
 }
 
-func ParseMsg(msg []byte, peer *Peer) (MSG, error) {
-	msgStruct := MSG{}
+func ParseMsg(msg []byte, peer *Peer) (*MSG, error) {
+	msgStruct := new(MSG)
 	msgStruct.msgType = incomingMsg
 	msgStruct.Peer = peer
 
