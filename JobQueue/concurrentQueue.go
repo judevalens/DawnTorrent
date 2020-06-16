@@ -1,8 +1,14 @@
-package PeerProtocol
+package JobQueue
 
 import (
 	"container/list"
 	"sync"
+)
+
+const (
+	HighPriority = 2
+	MediumPriority = 1
+	LowPriority = 0
 )
 
 type Queue struct {

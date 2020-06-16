@@ -8,7 +8,7 @@ func main() {
 	done := make(chan bool)
 
 
-	torrentPath := "C:\\Users\\jude\\go\\src\\DawnTorrent\\files\\ubuntu-20.04-desktop-amd64.iso.torrent"
+	torrentPath := "C:\\Users\\jude\\go\\src\\DawnTorrent\\files\\big-buck-bunny.torrent"
 	torrent := PeerProtocol.NewTorrent(torrentPath, done)
 	//go DawnTorrent.RequestQueueManager()
 	_ = torrent

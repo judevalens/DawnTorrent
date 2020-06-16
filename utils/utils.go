@@ -16,9 +16,15 @@ import (
 )
 
 const DEBUG = true
-const PORT = 63400
-const PORT2 = 6884
+const PORT = 6881
+const PORT2 = 6881
 const UpFlag = "up"
+
+const (
+	PieceHashPath   = 0
+	TorrentDataPath = 1
+)
+
 
 var LocalAddr, _ =  net.ResolveTCPAddr("tcp",LocalAddress().String()+":"+strconv.Itoa(PORT2))
 var LocalAddr2, _ =  net.ResolveTCPAddr("tcp",":"+strconv.Itoa(PORT))
@@ -29,7 +35,8 @@ var KeepAliveDuration, _ = time.ParseDuration("120s")
 
 var homeDir, _ = os.UserHomeDir()
 
-var	TorrentHomeDir = homeDir + "/DawnTorrent"
+var	TorrentHomeDir = homeDir + "\\DawnTorrent\\files"
+var	SavedTorrentDir = homeDir + "\\DawnTorrent\\torrents"
 
 func GetRandomId() string {
 	PeerIDLength := 20
@@ -130,6 +137,28 @@ func flipBit(b uint8) uint8 {
 	return a
 }
 
+func GetPath(pathType int,filePath string) (string){
+	var path string
+	switch pathType {
+	case PieceHashPath:
+		pathRoot := SavedTorrentDir + "/"+ filePath
+		if _, err := os.Stat(pathRoot); os.IsNotExist(err) {
+			_ = os.MkdirAll(pathRoot, os.ModePerm)
+
+		}
+		path =SavedTorrentDir + "/"+ filePath + "/piecesHash.sha1"
+	case TorrentDataPath:
+		pathRoot := SavedTorrentDir + "/"+ filePath
+		if _, err := os.Stat(pathRoot); os.IsNotExist(err) {
+			_ = os.MkdirAll(pathRoot, os.ModePerm)
+
+		}
+		path =SavedTorrentDir + "/"+ filePath + "/" + filePath +".json"
+
+	}
+
+return path
+}
 
 
 /// That's a work in progress
