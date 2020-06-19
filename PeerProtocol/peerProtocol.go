@@ -34,7 +34,6 @@ type Torrent struct {
 }
 
 func NewTorrent(torrentPath string, done chan bool) *Torrent {
-
 	torrent := new(Torrent)
 	torrent.File = initTorrentFile(torrent, torrentPath)
 	torrent.File.saveTorrent()
@@ -178,7 +177,7 @@ func (torrent *Torrent)requestPiece(subPieceRequest *PieceRequest)error{
 	var peer *Peer
 
 	for !isPeerFree{
-fmt.Printf("looking for a suitable peer | # of available peer : %v\n", torrent.PeerSwarm.PeerByDownloadRate.Size())
+//fmt.Printf("looking for a suitable peer | # of available peer : %v\n", torrent.PeerSwarm.PeerByDownloadRate.Size())
 	//	fmt.Printf("\nchoking peer # %v\n",torrent.chokeCounter)
 	//	fmt.Printf("looking for a suitable peer | # of available peer active connection: %v\n", torrent.PeerSwarm.activeConnection.Size())
 		peerI, found := torrent.PeerSwarm.PeerByDownloadRate.Get(peerIndex)
@@ -232,7 +231,7 @@ func (torrent *Torrent) PieceRequestManager(){
 	start := 0
 	torrent.File.timeS = time.Now()
 
-	for  {
+	for   {
 		println("223")
 		if torrent.File.SelectNewPiece {
 			if torrent.File.PieceSelectionBehavior == "random" {

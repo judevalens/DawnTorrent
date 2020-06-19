@@ -140,7 +140,7 @@ func (file *TorrentFile) saveTorrent() {
 	wErr := ioutil.WriteFile(savedTorrentDataPath, SavedTorrentDataBuffer.Bytes(), os.ModePerm)
 	if wErr != nil {
 		fmt.Printf("%v", wErr)
-		os.Exit(222)
+		//os.Exit(222)
 	}
 
 }

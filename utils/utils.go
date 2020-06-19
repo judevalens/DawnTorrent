@@ -4,7 +4,6 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
-	upnp "github.com/huin/goupnp/dcps/internetgateway1"
 	"log"
 	"math"
 	"math/rand"
@@ -13,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	upnp "github.com/huin/goupnp/dcps/internetgateway1"
 )
 
 const DEBUG = true
@@ -25,18 +26,16 @@ const (
 	TorrentDataPath = 1
 )
 
-
-var LocalAddr, _ =  net.ResolveTCPAddr("tcp",LocalAddress().String()+":"+strconv.Itoa(PORT2))
-var LocalAddr2, _ =  net.ResolveTCPAddr("tcp",":"+strconv.Itoa(PORT))
+var LocalAddr, _ = net.ResolveTCPAddr("tcp", LocalAddress().String()+":"+strconv.Itoa(PORT2))
+var LocalAddr2, _ = net.ResolveTCPAddr("tcp", ":"+strconv.Itoa(PORT))
 var MyID = GetRandomId()
 
 var KeepAliveDuration, _ = time.ParseDuration("120s")
 
-
 var homeDir, _ = os.UserHomeDir()
 
-var	TorrentHomeDir = homeDir + "\\DawnTorrent\\files"
-var	SavedTorrentDir = homeDir + "\\DawnTorrent\\torrents"
+var TorrentHomeDir = homeDir + "\\DawnTorrent\\files"
+var SavedTorrentDir = homeDir + "\\DawnTorrent\\torrents"
 
 func GetRandomId() string {
 	PeerIDLength := 20
@@ -61,8 +60,7 @@ func GetRandomId() string {
 	return peerId
 }
 
-
-func Debugln(st string){
+func Debugln(st string) {
 
 	if DEBUG {
 		fmt.Println(st)
@@ -76,7 +74,7 @@ func LocalAddress() net.IP {
 	}
 
 	for _, iface := range list {
-		
+
 		fmt.Printf("%v flag %v index %v\n", iface.Name, iface.Flags.String(), iface.Index)
 
 		interfaceAddrs, _ := iface.Addrs()
@@ -107,25 +105,25 @@ func LocalAddress() net.IP {
 	return net.IP{}
 }
 
-func BitMask(b uint8,bits []int, action int)uint8 {
+func BitMask(b uint8, bits []int, action int) uint8 {
 
 	if action == 1 {
-		for _,v := range bits{
+		for _, v := range bits {
 			bitPosition := uint8(math.Exp2(float64(v)))
-			b = b|bitPosition
+			b = b | bitPosition
 		}
-	}else if action == 0{
-		for _,v := range bits{
+	} else if action == 0 {
+		for _, v := range bits {
 			bitPosition := uint8(math.Exp2(float64(v)))
-			bitPositionFlipped := flipBit(bitPosition )
-			b = b&bitPositionFlipped
+			bitPositionFlipped := flipBit(bitPosition)
+			b = b & bitPositionFlipped
 		}
 	}
 
 	return b
 
 }
-func IsBitOn(b uint8,pos int)bool{
+func IsBitOn(b uint8, pos int) bool {
 	bitPosition := uint8(math.Exp2(float64(pos)))
 	a := b & bitPosition
 
@@ -137,29 +135,28 @@ func flipBit(b uint8) uint8 {
 	return a
 }
 
-func GetPath(pathType int,filePath string) (string){
+func GetPath(pathType int, filePath string) string {
 	var path string
 	switch pathType {
 	case PieceHashPath:
-		pathRoot := SavedTorrentDir + "/"+ filePath
+		pathRoot := SavedTorrentDir + "\\" + filePath
 		if _, err := os.Stat(pathRoot); os.IsNotExist(err) {
 			_ = os.MkdirAll(pathRoot, os.ModePerm)
 
 		}
-		path =SavedTorrentDir + "/"+ filePath + "/piecesHash.sha1"
+		path = SavedTorrentDir + "\\" + filePath + "\\piecesHash.sha1"
 	case TorrentDataPath:
-		pathRoot := SavedTorrentDir + "/"+ filePath
+		pathRoot := SavedTorrentDir + "\\" + filePath
 		if _, err := os.Stat(pathRoot); os.IsNotExist(err) {
 			_ = os.MkdirAll(pathRoot, os.ModePerm)
 
 		}
-		path =SavedTorrentDir + "/"+ filePath + "/" + filePath +".json"
+		path = SavedTorrentDir + "\\" + filePath + "\\" + filePath + ".json"
 
 	}
 
-return path
+	return path
 }
-
 
 /// That's a work in progress
 /// for now I will manually forward the port

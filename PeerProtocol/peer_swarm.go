@@ -659,7 +659,7 @@ func(peer *Peer) isPeerFree () bool{
 	nPendingRequest := len(peer.peerPendingRequest)
 
 	if peer.peerIsChocking {
-		println("peer is choking")
+	//	println("peer is choking")
 		peer.peerPendingRequestMutex.Unlock()
 	peer.isFree = false
 	return peer.isFree
