@@ -2,7 +2,6 @@ package PeerProtocol
 
 import (
 	"DawnTorrent/JobQueue"
-	"DawnTorrent/parser"
 	"errors"
 	"fmt"
 	"math"
@@ -19,26 +18,25 @@ const (
 )
 
 type Torrent struct {
-	TrackerResponse *parser.Dict
-	torrentMetaInfo *parser.Dict
 	PeerSwarm       *PeerSwarm
 	File            *TorrentFile
-
 	requestQueue     *JobQueue.Queue
 	incomingMsgQueue *JobQueue.Queue
 	pieceQueue       *JobQueue.Queue
 	PieceCounter     int
 	chokeCounter int
-
 	done chan bool
 }
 
-func NewTorrent(torrentPath string, done chan bool) *Torrent {
+func NewTorrent(torrentPath string, mode int) *Torrent {
 	torrent := new(Torrent)
-	torrent.File = initTorrentFile(torrent, torrentPath)
-	torrent.File.saveTorrent()
-	println("torrent.File.infoHash")
-	println(torrent.File.infoHash)
+	if mode == InitTorrentFile_ {
+		// creates a brand new Torrent
+		torrent.File = initTorrentFile(torrent, torrentPath)
+	}else if mode == ResumeTorrentFile_ {
+		// resumes a saved stopped torrent
+		torrent.File = resumeTorrentFile(torrentPath)
+	}
 	torrent.PeerSwarm = NewPeerSwarm(torrent)
 	torrent.requestQueue = JobQueue.NewQueue(torrent)
 	torrent.incomingMsgQueue = JobQueue.NewQueue(torrent)
@@ -46,15 +44,24 @@ func NewTorrent(torrentPath string, done chan bool) *Torrent {
 	torrent.requestQueue.Run(1)
 	torrent.incomingMsgQueue.Run(1)
 	torrent.pieceQueue.Run(1)
-
-	//torrent.worker()
-//	go torrent.SelectPiece()
-
-time.AfterFunc(time.Second*3, func() {
-	go torrent.PieceRequestManager()
-})
 	return torrent
 }
+func (torrent *Torrent)	ResumeFromPause()	{
+	torrent.File = resumeTorrentFile(torrent.File.Name)
+	torrent.Start()
+	torrent.PeerSwarm.trackerRegularRequest()
+
+}
+func (torrent *Torrent)	Pause(){
+	torrent.File.setState(stoppedState)
+	torrent.File.saveTorrent()
+	torrent.PeerSwarm.killSwarm()
+}
+func (torrent *Torrent) Start(){
+	torrent.File.setState(startedState)
+	go torrent.PieceRequestManager()
+}
+
 
 func (torrent *Torrent) TitForTat() {
 
@@ -156,13 +163,11 @@ func (torrent *Torrent) SelectPiece() {
 	}
 
 }
-func ResumeTorrent() *Torrent{
-	torrent := new(Torrent)
 
-	return torrent
-}
 
-//	Adds a request for piece a request to the a job Queue
+
+
+//	Adds a request for piece to the a job Queue
 //	Params :
 //	subPieceRequest *PieceRequest : contains the raw request msg
 func (torrent *Torrent)requestPiece(subPieceRequest *PieceRequest)error{
@@ -231,7 +236,7 @@ func (torrent *Torrent) PieceRequestManager(){
 	start := 0
 	torrent.File.timeS = time.Now()
 
-	for   {
+	for  atomic.LoadInt32(torrent.File.status) == startedState {
 		println("223")
 		if torrent.File.SelectNewPiece {
 			if torrent.File.PieceSelectionBehavior == "random" {

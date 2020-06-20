@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -34,8 +35,13 @@ var KeepAliveDuration, _ = time.ParseDuration("120s")
 
 var homeDir, _ = os.UserHomeDir()
 
-var TorrentHomeDir = homeDir + "\\DawnTorrent\\files"
-var SavedTorrentDir = homeDir + "\\DawnTorrent\\torrents"
+var TorrentHomeDir = filepath.FromSlash(homeDir + "/DawnTorrent/files")
+
+var SavedTorrentDir = filepath.FromSlash(homeDir + "/DawnTorrent/torrents")
+
+
+
+
 
 func GetRandomId() string {
 	PeerIDLength := 20
@@ -135,27 +141,26 @@ func flipBit(b uint8) uint8 {
 	return a
 }
 
-func GetPath(pathType int, filePath string) string {
-	var path string
+func GetPath(pathType int, path string) string {
+	var path2 string
+	pathRoot := filepath.FromSlash(SavedTorrentDir + "/" + path)
+
 	switch pathType {
 	case PieceHashPath:
-		pathRoot := SavedTorrentDir + "\\" + filePath
 		if _, err := os.Stat(pathRoot); os.IsNotExist(err) {
 			_ = os.MkdirAll(pathRoot, os.ModePerm)
 
 		}
-		path = SavedTorrentDir + "\\" + filePath + "\\piecesHash.sha1"
+		path2 = filepath.FromSlash(SavedTorrentDir + "/" + path + "/piecesHash.sha1")
 	case TorrentDataPath:
-		pathRoot := SavedTorrentDir + "\\" + filePath
 		if _, err := os.Stat(pathRoot); os.IsNotExist(err) {
 			_ = os.MkdirAll(pathRoot, os.ModePerm)
 
 		}
-		path = SavedTorrentDir + "\\" + filePath + "\\" + filePath + ".json"
-
+		path2 =filepath.FromSlash(SavedTorrentDir + "/" + path + "/" + path + ".json")
 	}
 
-	return path
+	return path2
 }
 
 /// That's a work in progress

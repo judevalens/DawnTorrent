@@ -19,34 +19,34 @@ type TorrentFile struct {
 	CreatedBy      string
 	CreationDate   string
 	Encoding       string
-	piecesSha1Hash string
-	FileMode       int
-	filesMutex     sync.RWMutex
-	files          []*fileInfo
-	PiecesMutex    sync.RWMutex
-	Pieces         []*Piece
-	nPiece         int
-	FileLen        int
-	subPieceLen    int
-	nSubPiece      int
-	infoHash       string
-	infoHashByte               [20]byte
-	pieceLength                int
-	Name                       string
-	NeededPiece                map[int]*Piece
-	currentPiece               *Piece
-	PieceSelectionBehavior     string
-	SelectNewPiece             bool
-	CurrentPieceIndex          int
-	torrent                    *Torrent
-	timeS                      time.Time
+	piecesSha1Hash         string
+	FileMode               int
+	filesMutex             sync.RWMutex
+	files                  []*fileInfo
+	PiecesMutex            sync.RWMutex
+	Pieces                 []*Piece
+	nPiece                 int
+	FileLen                int
+	subPieceLen            int
+	nSubPiece              int
+	InfoHash               string
+	infoHashByte           [20]byte
+	pieceLength            int
+	Name                   string
+	NeededPiece            map[int]*Piece
+	currentPiece           *Piece
+	PieceSelectionBehavior string
+	SelectNewPiece         bool
+	CurrentPieceIndex      int
+	torrent                *Torrent
+	timeS                  time.Time
 	totalDownloaded            int
 	left                       int
 	uploaded                   int
 	pieceAvailabilityMutex     *sync.RWMutex
 	PieceAvailability          *arraylist.List
 	PieceAvailabilityTimeStamp time.Time
-	status                     int
+	status     	*int32
 }
 
 type fileInfo struct {

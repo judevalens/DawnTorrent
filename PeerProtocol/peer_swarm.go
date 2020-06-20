@@ -69,12 +69,12 @@ func NewPeerSwarm(torrent *Torrent) *PeerSwarm {
 }
 
 func (peerSwarm *PeerSwarm) Listen() {
-	sever, err := net.ListenTCP("tcp", utils.LocalAddr2)
-	//fmt.Printf("Listenning on %v\n", sever.Addr().String())
-
-	for {
+	server, err := net.ListenTCP("tcp", utils.LocalAddr2)
+	//fmt.Printf("Listening on %v\n", server.Addr().String())
+	if err != nil{
+	for atomic.LoadInt32(peerSwarm.torrent.File.status) == startedState{
 		if err == nil {
-			connection, connErr := sever.AcceptTCP()
+			connection, connErr := server.AcceptTCP()
 			if connErr == nil {
 				// limits the number of active connection
 				//if *peerSwarm.nActiveConnection <= peerSwarm.maxConnection {
@@ -93,7 +93,11 @@ func (peerSwarm *PeerSwarm) Listen() {
 			////println("eer")
 			//log.Fatal(err)
 		}
+	}
 
+	if server != nil{
+		_ = server.Close()
+	}
 	}
 }
 func (peerSwarm *PeerSwarm) connect(peer *Peer) {
@@ -105,14 +109,14 @@ func (peerSwarm *PeerSwarm) connect(peer *Peer) {
 		_ = connection.SetKeepAlive(true)
 		_ = connection.SetKeepAlivePeriod(utils.KeepAliveDuration)
 
-		msg := MSG{MsgID: HandShakeMsgID, InfoHash: []byte(peerSwarm.torrent.File.infoHash), MyPeerID: utils.MyID}
+		msg := MSG{MsgID: HandShakeMsgID, InfoHash: []byte(peerSwarm.torrent.File.InfoHash), MyPeerID: utils.MyID}
 		_, _ = connection.Write(GetMsg(msg, peer).rawMsg)
 
 		handshakeBytes := make([]byte, 68)
 		_, readErr := io.ReadFull(connection, handshakeBytes)
 
 		if readErr == nil {
-			_, handShakeErr := ParseHandShake(handshakeBytes, peerSwarm.torrent.File.infoHash)
+			_, handShakeErr := ParseHandShake(handshakeBytes, peerSwarm.torrent.File.InfoHash)
 			if handShakeErr == nil {
 
 				peerSwarm.activeConnectionMutex.Lock()
@@ -148,11 +152,11 @@ func (peerSwarm *PeerSwarm) handleNewPeer(connection *net.TCPConn) {
 	handShakeMsg := make([]byte, 68)
 	_, readErr := io.ReadFull(connection, handShakeMsg)
 	if readErr == nil {
-		parsedHandShakeMsg, handShakeErr := ParseHandShake(handShakeMsg, peerSwarm.torrent.File.infoHash)
+		parsedHandShakeMsg, handShakeErr := ParseHandShake(handShakeMsg, peerSwarm.torrent.File.InfoHash)
 
 		if handShakeErr == nil {
 			remotePeerAddr, _ := net.ResolveTCPAddr("tcp", connection.RemoteAddr().String())
-			handShakeMsgResponse := GetMsg(MSG{MsgID: HandShakeMsgID, InfoHash: []byte(peerSwarm.torrent.File.infoHash), MyPeerID: utils.MyID}, nil)
+			handShakeMsgResponse := GetMsg(MSG{MsgID: HandShakeMsgID, InfoHash: []byte(peerSwarm.torrent.File.InfoHash), MyPeerID: utils.MyID}, nil)
 			_, writeErr := connection.Write(handShakeMsgResponse.rawMsg)
 			if writeErr == nil {
 				newPeer = peerSwarm.addNewPeer(remotePeerAddr.IP.String(), strconv.Itoa(remotePeerAddr.Port), parsedHandShakeMsg.peerID)
@@ -212,7 +216,7 @@ func (peerSwarm *PeerSwarm) addPeersFromTracker(peers *parser.Dict) {
 func (peerSwarm *PeerSwarm) httpTrackerRequest(state int) (*parser.Dict, error) {
 	var err error
 	PeerId := utils.MyID
-	infoHash := peerSwarm.torrent.File.infoHash
+	infoHash := peerSwarm.torrent.File.InfoHash
 
 	event := ""
 	switch state {
@@ -225,7 +229,7 @@ func (peerSwarm *PeerSwarm) httpTrackerRequest(state int) (*parser.Dict, error) 
 
 	}
 
-	//fmt.Printf("%x\n", infoHash)
+	//fmt.Printf("%x\n", InfoHash)
 
 
 	trackerRequestParam := url.Values{}
@@ -325,7 +329,7 @@ func (peerSwarm *PeerSwarm) udpTrackerRequest(event int) (udpMSG, error) {
 
 					transactionID := randSeed.Uint32()
 					key := randSeed.Uint32()
-					announceMsg := udpTrackerAnnounceMsg(udpMSG{connectionID: connectionResponse.connectionID, action: udpAnnounceRequest, transactionID: int(transactionID), infoHash: []byte(peerSwarm.torrent.File.infoHash), peerID: []byte(utils.MyID), downloaded: peerSwarm.torrent.File.totalDownloaded, uploaded: peerSwarm.torrent.File.uploaded, left: peerSwarm.torrent.File.left, event: peerSwarm.torrent.File.status, ip: ipByte, key: int(key), port: utils.LocalAddr.Port, numWant: -1})
+					announceMsg := udpTrackerAnnounceMsg(udpMSG{connectionID: connectionResponse.connectionID, action: udpAnnounceRequest, transactionID: int(transactionID), infoHash: []byte(peerSwarm.torrent.File.InfoHash), peerID: []byte(utils.MyID), downloaded: peerSwarm.torrent.File.totalDownloaded, uploaded: peerSwarm.torrent.File.uploaded, left: peerSwarm.torrent.File.left, event: int(atomic.LoadInt32(peerSwarm.torrent.File.status)), ip: ipByte, key: int(key), port: utils.LocalAddr.Port, numWant: -1})
 
 					_, writingErr = udpConn.Write(announceMsg)
 
@@ -377,7 +381,7 @@ var trackerErr error
 
 	if peerSwarm.torrent.File.Announce[0] == 'u' {
 		var udpTrackerResponse udpMSG
-		udpTrackerResponse, trackerErr = peerSwarm.udpTrackerRequest(peerSwarm.torrent.File.status)
+		udpTrackerResponse, trackerErr = peerSwarm.udpTrackerRequest(int(atomic.LoadInt32(peerSwarm.torrent.File.status)))
 		peersFromTracker = new(parser.Dict)
 		peersFromTracker.MapString = make(map[string]string)
 		if trackerErr == nil{
@@ -385,7 +389,7 @@ var trackerErr error
 			peerSwarm.trackerInterval = udpTrackerResponse.interval
 		}
 	} else if peerSwarm.torrent.File.Announce[0] == 'h'{
-	peersFromTracker, trackerErr = peerSwarm.httpTrackerRequest(peerSwarm.torrent.File.status)
+	peersFromTracker, trackerErr = peerSwarm.httpTrackerRequest(int(atomic.LoadInt32(peerSwarm.torrent.File.status)))
 	if peersFromTracker != nil{
 		peerSwarm.trackerInterval, _ = strconv.Atoi(peersFromTracker.MapString["interval"])
 	}
@@ -410,13 +414,13 @@ var trackerErr error
 }
 
 func (peerSwarm *PeerSwarm) trackerRegularRequest(){
-	for {
+	for atomic.LoadInt32(peerSwarm.torrent.File.status) == startedState{
 		var peersFromTracker *parser.Dict
 		var trackerErr error
 
 		if peerSwarm.torrent.File.Announce[0] == 'u' {
 			var udpTrackerResponse udpMSG
-			udpTrackerResponse, trackerErr = peerSwarm.udpTrackerRequest(peerSwarm.torrent.File.status)
+			udpTrackerResponse, trackerErr = peerSwarm.udpTrackerRequest(int(atomic.LoadInt32(peerSwarm.torrent.File.status)))
 			peersFromTracker = new(parser.Dict)
 			peersFromTracker.MapString = make(map[string]string)
 			if trackerErr == nil{
@@ -424,7 +428,7 @@ func (peerSwarm *PeerSwarm) trackerRegularRequest(){
 				peerSwarm.trackerInterval = udpTrackerResponse.interval
 			}
 		} else if peerSwarm.torrent.File.Announce[0] == 'h'{
-			peersFromTracker, trackerErr = peerSwarm.httpTrackerRequest(peerSwarm.torrent.File.status)
+			peersFromTracker, trackerErr = peerSwarm.httpTrackerRequest(int(atomic.LoadInt32(peerSwarm.torrent.File.status)))
 			if peersFromTracker != nil{
 				peerSwarm.trackerInterval, _ = strconv.Atoi(peersFromTracker.MapString["interval"])
 			}
@@ -451,6 +455,11 @@ func (peerSwarm *PeerSwarm) trackerRegularRequest(){
 		time.Sleep(time.Duration(time.Second.Seconds()*1000000000*float64(peerSwarm.trackerInterval)))
 	}
 }
+
+func (peerSwarm *PeerSwarm) killSwarm()  {
+	
+}
+
 func (peerSwarm *PeerSwarm) trackerRequestEvent(){
 
 }
