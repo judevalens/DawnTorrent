@@ -1,3 +1,7 @@
 *.exe
 *.torrent
 DawnTorrent
+
+/gui/node_modules
+
+/.idea
