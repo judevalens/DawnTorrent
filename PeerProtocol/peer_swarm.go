@@ -72,7 +72,7 @@ func (peerSwarm *PeerSwarm) Listen() {
 	server, err := net.ListenTCP("tcp", utils.LocalAddr2)
 	//fmt.Printf("Listening on %v\n", server.Addr().String())
 	if err != nil{
-	for atomic.LoadInt32(peerSwarm.torrent.File.status) == startedState{
+	for atomic.LoadInt32(peerSwarm.torrent.File.Status) == startedState{
 		if err == nil {
 			connection, connErr := server.AcceptTCP()
 			if connErr == nil {
@@ -237,7 +237,7 @@ func (peerSwarm *PeerSwarm) httpTrackerRequest(state int) (*parser.Dict, error) 
 	trackerRequestParam.Add("peer_id", PeerId)
 	trackerRequestParam.Add("port", strconv.Itoa(utils.PORT))
 	trackerRequestParam.Add("uploaded", strconv.Itoa(peerSwarm.torrent.File.uploaded))
-	trackerRequestParam.Add("downloaded", strconv.Itoa(peerSwarm.torrent.File.totalDownloaded))
+	trackerRequestParam.Add("downloaded", strconv.Itoa(peerSwarm.torrent.File.TotalDownloaded))
 	trackerRequestParam.Add("left", strconv.Itoa(peerSwarm.torrent.File.left))
 	trackerRequestParam.Add("event", event)
 
@@ -329,7 +329,7 @@ func (peerSwarm *PeerSwarm) udpTrackerRequest(event int) (udpMSG, error) {
 
 					transactionID := randSeed.Uint32()
 					key := randSeed.Uint32()
-					announceMsg := udpTrackerAnnounceMsg(udpMSG{connectionID: connectionResponse.connectionID, action: udpAnnounceRequest, transactionID: int(transactionID), infoHash: []byte(peerSwarm.torrent.File.InfoHash), peerID: []byte(utils.MyID), downloaded: peerSwarm.torrent.File.totalDownloaded, uploaded: peerSwarm.torrent.File.uploaded, left: peerSwarm.torrent.File.left, event: int(atomic.LoadInt32(peerSwarm.torrent.File.status)), ip: ipByte, key: int(key), port: utils.LocalAddr.Port, numWant: -1})
+					announceMsg := udpTrackerAnnounceMsg(udpMSG{connectionID: connectionResponse.connectionID, action: udpAnnounceRequest, transactionID: int(transactionID), infoHash: []byte(peerSwarm.torrent.File.InfoHash), peerID: []byte(utils.MyID), downloaded: peerSwarm.torrent.File.TotalDownloaded, uploaded: peerSwarm.torrent.File.uploaded, left: peerSwarm.torrent.File.left, event: int(atomic.LoadInt32(peerSwarm.torrent.File.Status)), ip: ipByte, key: int(key), port: utils.LocalAddr.Port, numWant: -1})
 
 					_, writingErr = udpConn.Write(announceMsg)
 
@@ -381,7 +381,7 @@ var trackerErr error
 
 	if peerSwarm.torrent.File.Announce[0] == 'u' {
 		var udpTrackerResponse udpMSG
-		udpTrackerResponse, trackerErr = peerSwarm.udpTrackerRequest(int(atomic.LoadInt32(peerSwarm.torrent.File.status)))
+		udpTrackerResponse, trackerErr = peerSwarm.udpTrackerRequest(int(atomic.LoadInt32(peerSwarm.torrent.File.Status)))
 		peersFromTracker = new(parser.Dict)
 		peersFromTracker.MapString = make(map[string]string)
 		if trackerErr == nil{
@@ -389,7 +389,7 @@ var trackerErr error
 			peerSwarm.trackerInterval = udpTrackerResponse.interval
 		}
 	} else if peerSwarm.torrent.File.Announce[0] == 'h'{
-	peersFromTracker, trackerErr = peerSwarm.httpTrackerRequest(int(atomic.LoadInt32(peerSwarm.torrent.File.status)))
+	peersFromTracker, trackerErr = peerSwarm.httpTrackerRequest(int(atomic.LoadInt32(peerSwarm.torrent.File.Status)))
 	if peersFromTracker != nil{
 		peerSwarm.trackerInterval, _ = strconv.Atoi(peersFromTracker.MapString["interval"])
 	}
@@ -414,13 +414,13 @@ var trackerErr error
 }
 
 func (peerSwarm *PeerSwarm) trackerRegularRequest(){
-	for atomic.LoadInt32(peerSwarm.torrent.File.status) == startedState{
+	for atomic.LoadInt32(peerSwarm.torrent.File.Status) == startedState{
 		var peersFromTracker *parser.Dict
 		var trackerErr error
 
 		if peerSwarm.torrent.File.Announce[0] == 'u' {
 			var udpTrackerResponse udpMSG
-			udpTrackerResponse, trackerErr = peerSwarm.udpTrackerRequest(int(atomic.LoadInt32(peerSwarm.torrent.File.status)))
+			udpTrackerResponse, trackerErr = peerSwarm.udpTrackerRequest(int(atomic.LoadInt32(peerSwarm.torrent.File.Status)))
 			peersFromTracker = new(parser.Dict)
 			peersFromTracker.MapString = make(map[string]string)
 			if trackerErr == nil{
@@ -428,7 +428,7 @@ func (peerSwarm *PeerSwarm) trackerRegularRequest(){
 				peerSwarm.trackerInterval = udpTrackerResponse.interval
 			}
 		} else if peerSwarm.torrent.File.Announce[0] == 'h'{
-			peersFromTracker, trackerErr = peerSwarm.httpTrackerRequest(int(atomic.LoadInt32(peerSwarm.torrent.File.status)))
+			peersFromTracker, trackerErr = peerSwarm.httpTrackerRequest(int(atomic.LoadInt32(peerSwarm.torrent.File.Status)))
 			if peersFromTracker != nil{
 				peerSwarm.trackerInterval, _ = strconv.Atoi(peersFromTracker.MapString["interval"])
 			}

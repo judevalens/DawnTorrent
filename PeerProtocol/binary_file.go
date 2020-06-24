@@ -5,6 +5,7 @@ import (
 	"DawnTorrent/utils"
 	"bytes"
 	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"github.com/emirpasic/gods/lists/arraylist"
@@ -29,7 +30,7 @@ const (
 )
 
 // loads .torrent file and process the metadata to start downloading and uploading
-func initTorrentFile(torrent *Torrent, torrentPath string) *TorrentFile {
+func InitTorrentFile(torrent *Torrent, torrentPath string) *TorrentFile {
 	file := new(TorrentFile)
 	file.torrent = torrent
 	metaInfo := parser.Unmarshall(torrentPath)
@@ -59,7 +60,6 @@ func initTorrentFile(torrent *Torrent, torrentPath string) *TorrentFile {
 		}
 	} else {
 		file.FileMode = 0
-
 		filePath := metaInfo.MapDict["info"].MapString["name"]
 		fileLength, _ := strconv.Atoi(metaInfo.MapDict["info"].MapString["length"])
 		totalLength += fileLength
@@ -71,34 +71,17 @@ func initTorrentFile(torrent *Torrent, torrentPath string) *TorrentFile {
 	file.PieceSelectionBehavior = "random"
 	file.SelectNewPiece = true
 
-	file.saveTorrent()
-
-	tp := utils.GetPath(utils.TorrentDataPath, file.Name)
-	file2 := resumeTorrentFile(tp)
-
-	fmt.Printf("file 1 npIeces %v\n", file.nPiece)
-	fmt.Printf("file 2 npIeces %v\n", file2.nPiece)
-	fmt.Printf("file 1 infohash %v\n", file.InfoHash)
-	fmt.Printf("file 2 infohash %v\n", file2.InfoHash)
-	fmt.Printf("file 1 %v\n", len(file.piecesSha1Hash))
-	fmt.Printf("file 2 %v\n", len(file2.piecesSha1Hash))
-	fmt.Printf("file 1 pieces %v\n", len(file.Pieces))
-	fmt.Printf("file 2 pieces %v\n", len(file2.Pieces))
-	fmt.Printf("file 1 Status %v\n", file.status)
-	fmt.Printf("file 2 Status %v\n", file2.status)
-
 	return file
 }
 
 func (file *TorrentFile) setState(state int){
-	atomic.StoreInt32(file.status,int32(state))
+	atomic.StoreInt32(file.Status,int32(state))
 }
 
 // resume a saved torrentFile
-func resumeTorrentFile(fileName string) *TorrentFile {
-	torrentDataPath := utils.GetPath(utils.TorrentDataPath,fileName)
+func resumeTorrentFile(path string) *TorrentFile {
 
-	torrentDataJSON, errr := ioutil.ReadFile(torrentDataPath)
+	torrentDataJSON, errr := ioutil.ReadFile(path)
 
 	if errr != nil {
 		log.Fatal(errr)
@@ -117,19 +100,17 @@ func resumeTorrentFile(fileName string) *TorrentFile {
 	file.CreationDate = torrentData.CreationDate
 	file.CreatedBy = torrentData.CreatedBy
 
-	fmt.Printf("\nfileLen  %v pieceLen %v\n", torrentData.FileLen, torrentData.PieceLength)
 
 	file.pieceLength = torrentData.PieceLength
 	file.left = torrentData.Left
 	file.Name = torrentData.Name
 	file.subPieceLen = torrentData.SubPieceLen
-	println("pieceHashPath")
 	pieceHashPath := utils.GetPath(utils.PieceHashPath, file.Name)
-	println(pieceHashPath)
 	pieceHash, _ := ioutil.ReadFile(pieceHashPath)
 	file.piecesSha1Hash = string(pieceHash)
 	 //will create the pieces
 	initFile(file, torrentData.FileInfos, torrentData.FileLen, torrentData.Left, torrentData.Pieces, torrentData.Status)
+	fmt.Printf("\nfile info\n file name : %v \n fileLen  %v \n pieceLen %v\n subPieceLen %v\n infoHash %v\n", file.Name, file.FileLen, file.pieceLength,file.subPieceLen,file.InfoHash)
 
 	return file
 }
@@ -143,7 +124,7 @@ func (file *TorrentFile) saveTorrent() {
 	SavedTorrentData.CreatedBy = file.CreatedBy
 	SavedTorrentData.CreationDate = file.CreationDate
 	SavedTorrentData.PieceLength = file.pieceLength
-///	SavedTorrentData.PiecesSha1 = file.piecesSha1Hash
+	///	SavedTorrentData.PiecesSha1 = file.piecesSha1Hash
 
 	i := []byte(file.piecesSha1Hash)
 
@@ -152,7 +133,7 @@ func (file *TorrentFile) saveTorrent() {
 	SavedTorrentData.FileLen = file.FileLen
 	SavedTorrentData.SubPieceLen = file.subPieceLen
 	SavedTorrentData.Name = file.Name
-	SavedTorrentData.Status = int(atomic.LoadInt32(file.status))
+	SavedTorrentData.Status = int(atomic.LoadInt32(file.Status))
 
 	pieces := make([]*Piece, file.nPiece)
 
@@ -166,7 +147,7 @@ func (file *TorrentFile) saveTorrent() {
 		pieces[i] = newPiece
 	}
 
-	SavedTorrentData.FileInfos = file.files
+	SavedTorrentData.FileInfos = file.Files
 
 	SavedTorrentData.Pieces = pieces
 
@@ -190,17 +171,56 @@ func (file *TorrentFile) saveTorrent() {
 	}
 
 }
+func (file *TorrentFile) saveTorrentForUiUpdate() {
+	SavedTorrentData := new(SavedTorrentData)
+	SavedTorrentData.Announce = file.Announce
+	SavedTorrentData.InfoHash = file.InfoHash
+	SavedTorrentData.Comment = file.Comment
+	SavedTorrentData.CreatedBy = file.CreatedBy
+	SavedTorrentData.CreationDate = file.CreationDate
+	SavedTorrentData.PieceLength = file.pieceLength
+	///	SavedTorrentData.PiecesSha1 = file.piecesSha1Hash
 
+	i := []byte(file.piecesSha1Hash)
 
+	fmt.Printf("len sha1 %v", i)
+	SavedTorrentData.Left = file.left
+	SavedTorrentData.FileLen = file.FileLen
+	SavedTorrentData.SubPieceLen = file.subPieceLen
+	SavedTorrentData.Name = file.Name
+	SavedTorrentData.Status = int(atomic.LoadInt32(file.Status))
+
+	pieces := make([]*Piece, file.nPiece)
+
+	for i, p := range file.Pieces {
+		newPiece := new(Piece)
+
+		file.PiecesMutex.Lock()
+		newPiece.Status = p.Status
+		newPiece.PieceIndex = p.PieceIndex
+		file.PiecesMutex.Unlock()
+		pieces[i] = newPiece
+	}
+
+	SavedTorrentData.FileInfos = file.Files
+
+	SavedTorrentData.Pieces = pieces
+
+	SavedTorrentDataBuffer := bytes.NewBuffer(make([]byte, 0))
+	SavedTorrentDataJSONEncoder := json.NewEncoder(SavedTorrentDataBuffer)
+	SavedTorrentDataJSONEncoder.SetEscapeHTML(false)
+	SavedTorrentDataJSONEncoder.SetIndent("", "")
+	_ = SavedTorrentDataJSONEncoder.Encode(SavedTorrentData)
+}
 
 // initialize pieces of file
 func initFile(file *TorrentFile, fileInfos []*fileInfo, fileTotalLength, left int, pieces []*Piece, torrentStatus int) {
-	file.status = new(int32)
-	atomic.StoreInt32(file.status,int32(torrentStatus))
+	file.Status = new(int32)
+	atomic.StoreInt32(file.Status,int32(torrentStatus))
 	file.NeededPiece = make(map[int]*Piece)
 
 	for _, f := range fileInfos {
-		file.files = append(file.files, f)
+		file.Files = append(file.Files, f)
 	}
 
 	file.FileLen = fileTotalLength
@@ -246,8 +266,8 @@ func initFile(file *TorrentFile, fileInfos []*fileInfo, fileTotalLength, left in
 
 	// process overlapping pieces
 	// determine which subPiece belongs to a file and the position where it starts
-	for i := 0; i < len(file.files); i++ {
-		f := file.files[i]
+	for i := 0; i < len(file.Files); i++ {
+		f := file.Files[i]
 		pos := new(pos)
 		pos.fileIndex = i
 		for pos.end != f.EndIndex {
@@ -300,7 +320,8 @@ func GetInfoHash(dict *parser.Dict) (string, [20]byte) {
 
 	infoHash := sha1.Sum(infoBytes)
 	infoHashSlice := infoHash[:]
-	//	println(hex.EncodeToString(bSlice))
+	println(hex.EncodeToString(infoHashSlice))
+
 
 	return string(infoHashSlice), infoHash
 
@@ -334,8 +355,6 @@ func NewPiece(torrentFile *TorrentFile, PieceIndex, pieceLength int, status int)
 				fmt.Printf("pieceLen %v\n", newPiece.Len)
 
 				if newPiece.Len != 1048576 {
-
-					//	os.Exit(2828)
 
 				}
 			}
@@ -407,7 +426,7 @@ func (file *TorrentFile) AddSubPiece(msg *MSG, peer *Peer) error {
 	}
 	msg.Peer.peerPendingRequestMutex.Unlock()
 
-		if atomic.LoadInt32(file.status) == int32(startedState){
+		if atomic.LoadInt32(file.Status) == int32(startedState){
 
 	// determines which piece this subPiece belongs to
 	currentPiece := file.Pieces[msg.PieceIndex]
@@ -422,7 +441,7 @@ func (file *TorrentFile) AddSubPiece(msg *MSG, peer *Peer) error {
 	// if we haven't already receive this piece , we saved it
 	if isEmpty {
 		if msg.PieceIndex != file.CurrentPieceIndex {
-			fmt.Printf("msg Piece Index %v current Piece Index %v", msg.PieceIndex, file.CurrentPieceIndex)
+			fmt.Printf("msg Piece App %v current Piece App %v", msg.PieceIndex, file.CurrentPieceIndex)
 			os.Exit(223444)
 		}
 
@@ -441,15 +460,15 @@ func (file *TorrentFile) AddSubPiece(msg *MSG, peer *Peer) error {
 
 		///fmt.Printf("Piece COunter %v\n",file.torrent.PieceCounter)
 		file.torrent.PieceCounter++
+		file.PiecesMutex.Lock()
 		currentPiece.CurrentLen += len(msg.Piece)
-		file.totalDownloaded += msg.PieceLen
+		file.TotalDownloaded += msg.PieceLen
 		file.left -= msg.PieceLen
-		fmt.Printf("downloaded %v mb in %v \n", file.totalDownloaded/1000000.0, time.Now().Sub(file.timeS))
+		fmt.Printf("downloaded %v mb in %v \n", file.TotalDownloaded/1000000.0, time.Now().Sub(file.timeS))
 
 		copy(currentPiece.Pieces[msg.BeginIndex:msg.BeginIndex+msg.PieceLen], msg.Piece)
 
 		// piece is complete add it to the file
-		file.PiecesMutex.Lock()
 		isPieceComplete := currentPiece.Len == currentPiece.CurrentLen
 		file.PiecesMutex.Unlock()
 
@@ -463,7 +482,7 @@ func (file *TorrentFile) AddSubPiece(msg *MSG, peer *Peer) error {
 			//	a piece can contains data that goes into multiple files
 			// pos struct contains start and end index , that indicates into which file a particular slice of data goes
 			for _, pos := range currentPiece.position {
-				currentFile := file.files[pos.fileIndex]
+				currentFile := file.Files[pos.fileIndex]
 
 				if _, err := os.Stat(utils.TorrentHomeDir); os.IsNotExist(err) {
 					_ = os.MkdirAll(utils.TorrentHomeDir, os.ModePerm)

@@ -163,6 +163,13 @@ func GetPath(pathType int, path string) string {
 	return path2
 }
 
+func GetFileName(path string) string{
+	extensionLen := len(filepath.Ext(path))
+	fileNameLen := len(path)
+
+	return path[:fileNameLen-extensionLen]
+}
+
 /// That's a work in progress
 /// for now I will manually forward the port
 

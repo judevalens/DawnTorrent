@@ -2,7 +2,6 @@ package parser
 
 import (
 	"io/ioutil"
-	"log"
 	"strconv"
 )
 
@@ -61,21 +60,8 @@ type Delimiter struct {
 
 func Unmarshall(path string) *Dict {
 
-	file := ReadFile(path)
-
-	dict := new(Dict)
-
-	containerInfo := new(containerInformation)
-	containerInfo.key = "origin"
-	containerInfo.StartingPosition = 0
-	r := Parse(dict, file, 0)
-	containerInfo.InnerEndingPosition = r.position
-
-	dict.KeyInfo = containerInfo
-
-
-	return dict
-
+	file, _ := ReadFile(path)
+	return UnmarshallFromArray(file)
 }
 
 func UnmarshallFromArray(file []byte) *Dict {
@@ -94,12 +80,12 @@ func UnmarshallFromArray(file []byte) *Dict {
 
 }
 
-func ReadFile(path string) []byte {
+func ReadFile(path string) ([]byte,error) {
 	file, err := ioutil.ReadFile(path)
 	if err != nil {
-		log.Fatal(err)
+	//	log.Fatal(err)
 	}
-	return file
+	return file,err
 }
 func getField(file []byte, pos int, dtype byte) ([]string, int, byte) {
 	var ch string

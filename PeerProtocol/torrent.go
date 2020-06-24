@@ -19,34 +19,34 @@ type TorrentFile struct {
 	CreatedBy      string
 	CreationDate   string
 	Encoding       string
-	piecesSha1Hash         string
-	FileMode               int
-	filesMutex             sync.RWMutex
-	files                  []*fileInfo
-	PiecesMutex            sync.RWMutex
-	Pieces                 []*Piece
-	nPiece                 int
-	FileLen                int
-	subPieceLen            int
-	nSubPiece              int
-	InfoHash               string
-	infoHashByte           [20]byte
-	pieceLength            int
-	Name                   string
-	NeededPiece            map[int]*Piece
-	currentPiece           *Piece
-	PieceSelectionBehavior string
-	SelectNewPiece         bool
-	CurrentPieceIndex      int
-	torrent                *Torrent
-	timeS                  time.Time
-	totalDownloaded            int
+	piecesSha1Hash string
+	FileMode       int
+	filesMutex     sync.RWMutex
+	Files          []*fileInfo
+	PiecesMutex    sync.RWMutex
+	Pieces         []*Piece
+	nPiece         int
+	FileLen        int
+	subPieceLen    int
+	nSubPiece      int
+	InfoHash       string
+	infoHashByte   [20]byte
+	pieceLength    int
+	Name           string
+	NeededPiece                map[int]*Piece
+	currentPiece               *Piece
+	PieceSelectionBehavior     string
+	SelectNewPiece             bool
+	CurrentPieceIndex          int
+	torrent                    *Torrent
+	timeS                      time.Time
+	TotalDownloaded            int
 	left                       int
 	uploaded                   int
 	pieceAvailabilityMutex     *sync.RWMutex
 	PieceAvailability          *arraylist.List
 	PieceAvailabilityTimeStamp time.Time
-	status     	*int32
+	Status                     *int32
 }
 
 type fileInfo struct {
@@ -122,5 +122,20 @@ type SavedTorrentData struct {
 	Status                 int
 	PieceSelectionBehavior int
 }
+
+
+type TorrentIPCData struct {
+	Name string
+	Path string
+	InfoHash string
+	Len int
+	CurrentLen int
+	PiecesStatus []bool
+	Status int
+	Command int
+	OpenMod int
+	FileInfos []*fileInfo
+}
+
 
 
