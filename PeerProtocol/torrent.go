@@ -31,6 +31,7 @@ type TorrentFile struct {
 	nSubPiece      int
 	InfoHash       string
 	infoHashByte   [20]byte
+	InfoHashHex 			string
 	pieceLength    int
 	Name           string
 	NeededPiece                map[int]*Piece
@@ -61,7 +62,7 @@ type Piece struct {
 	Len                 int
 	CurrentLen          int
 	SubPieceLen         int
-	Status              int
+	State               int
 	Pieces              []byte
 	PieceIndex          int
 	Availability        int
@@ -109,6 +110,7 @@ type SavedTorrentData struct {
 	CreationDate           string
 	Encoding               string
 	InfoHash               string
+	InfoHashHex 			string
 	piecesHash             string
 	PiecesSha1             string
 	Left                   int
@@ -119,22 +121,22 @@ type SavedTorrentData struct {
 	Pieces                 []*Piece
 	FileInfos              []*fileInfo
 	Name                   string
-	Status                 int
+	State                  int
 	PieceSelectionBehavior int
 }
 
 
 type TorrentIPCData struct {
-	Name string
-	Path string
-	InfoHash string
-	Len int
-	CurrentLen int
+	Name         string
+	Path         string
+	InfoHash     string
+	Len          int
+	CurrentLen   int
 	PiecesStatus []bool
-	Status int
-	Command int
-	OpenMod int
-	FileInfos []*fileInfo
+	State        int
+	Command      int
+	AddMode      int
+	FileInfos    []*fileInfo
 }
 
 

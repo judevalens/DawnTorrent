@@ -3,6 +3,7 @@ package main
 import (
 	"DawnTorrent/PeerProtocol"
 	"DawnTorrent/utils"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	zmq "github.com/pebbe/zmq4"
@@ -19,14 +20,12 @@ const (
 )
 
 const (
-	initUi = 0
-	updateUi = 0
+	clientCommand = 0
+	torrentTorrent = 2
 )
 
 type DawnTorrentClient struct {
-
 	torrents map[string]*PeerProtocol.Torrent
-
 }
 
 func main() {
@@ -74,46 +73,31 @@ func (dawnTorrentClient DawnTorrentClient) startZMQ(){
 
 }
 func (dawnTorrentClient *DawnTorrentClient) addTorrent(torrentIpcData *PeerProtocol.TorrentIPCData){
-	newTorrent := PeerProtocol.NewTorrent(torrentIpcData.Path, torrentIpcData.OpenMod)
-	dawnTorrentClient.torrents["1"] = newTorrent
+	newTorrent := PeerProtocol.NewTorrent(torrentIpcData.Path, torrentIpcData.AddMode)
+	dawnTorrentClient.torrents[newTorrent.File.InfoHashHex] = newTorrent
 	dawnTorrentClient.CaptureDataForUI(newTorrent,torrentIpcData)
 }
 func (dawnTorrentClient DawnTorrentClient) CaptureDataForUI(torrent *PeerProtocol.Torrent,torrentIpcData *PeerProtocol.TorrentIPCData) {
 	torrentIpcData.Len = torrent.File.FileLen
 	torrentIpcData.Name = torrent.File.Name
-	torrentIpcData.Status = int(atomic.LoadInt32(torrent.File.Status))
+	torrentIpcData.State = int(atomic.LoadInt32(torrent.File.Status))
 	torrentIpcData.CurrentLen = torrent.File.TotalDownloaded
 	torrentIpcData.FileInfos =  torrent.File.Files
+	torrentIpcData.InfoHash = hex.EncodeToString([]byte(torrent.File.InfoHash))
 }
-func (dawnTorrentClient *DawnTorrentClient) PauseTorrent (hash string){
-	dawnTorrentClient.torrents[hash].Pause()
-}
-func (dawnTorrentClient *DawnTorrentClient) Resume (hash string){
-	dawnTorrentClient.torrents[hash].ResumeFromPause()
-}
-func (dawnTorrentClient *DawnTorrentClient) Start(hash string){
-	dawnTorrentClient.torrents[hash].Start()
-}
-func (dawnTorrentClient *DawnTorrentClient) CommandRouter (msg *IpcMsg){
-		println("------test------------")
-	for _ , c := range msg.Commands {
-		fmt.Printf("c command %v\n", c.Command)
+func (dawnTorrentClient *DawnTorrentClient) PauseTorrent (command *Command){
+	fmt.Printf("\npause Test infoHash : %v\n", command.TorrentIPCData.InfoHash)
+	fmt.Printf("torrent to pause \n %v\n",dawnTorrentClient.torrents[command.TorrentIPCData.InfoHash])
+	torrent  := dawnTorrentClient.torrents[command.TorrentIPCData.InfoHash]
+	fmt.Printf("torrent infoHash : %v\n",torrent.File.InfoHashHex)
+	torrent.Pause()
+	command.TorrentIPCData.State = PeerProtocol.StoppedState
+	fmt.Printf("pause TEST DONE")
 
-		switch c.Command {
-	case AddTorrent:
-		 dawnTorrentClient.addTorrent(c.TorrentIPCData)
-	case DeleteTorrent:
-	case PauseTorrent:
-		//return dawnTorrentClient.PauseTorrent(msg.infoHash)
-	case ResumeTorrent:
-		//return dawnTorrentClient.Resume(msg.infoHash)
-	case InitClient:
-		println("--------init data--------")
-		 dawnTorrentClient.getClientInitData(msg)
-	case CloseClient:
-
-	}
-	}
+}
+func (dawnTorrentClient *DawnTorrentClient) Resume (command *Command){
+	dawnTorrentClient.torrents[command.TorrentIPCData.InfoHash].ResumeFromPause()
+	command.TorrentIPCData.State = PeerProtocol.StartedState
 }
 
 
@@ -148,10 +132,40 @@ func initClient() *DawnTorrentClient {
 	go dawnTorrentClient.startZMQ()
 	return dawnTorrentClient
 }
+func (dawnTorrentClient *DawnTorrentClient) CommandRouter (msg *IpcMsg){
+	println("------test------------")
 
-func(dawnTorrentClient *DawnTorrentClient) getClientInitData(ipcMsg *IpcMsg ) *IpcMsg{
+	if msg.CommandType >= 0{
+		for _ , c := range msg.Commands {
+			fmt.Printf("c command %v\n", c.Command)
+
+			switch c.Command {
+			case AddTorrent:
+				dawnTorrentClient.addTorrent(c.TorrentIPCData)
+			case DeleteTorrent:
+			case PauseTorrent:
+				dawnTorrentClient.PauseTorrent(c)
+			case ResumeTorrent:
+				 dawnTorrentClient.Resume(c)
+
+			case CloseClient:
+
+			}
+		}
+	}else{
+		switch msg.CommandType {
+		case InitClient:
+			println("getting init data--------------------")
+			dawnTorrentClient.getClientInitData(msg)
+		}
+	}
+
+}
+
+func(dawnTorrentClient *DawnTorrentClient) getClientInitData(ipcMsg *IpcMsg) *IpcMsg{
 	ipcMsg.Commands = make([]*Command,0)
-	println("getting init data")
+	fmt.Printf("getting init data len %v\n", len(dawnTorrentClient.torrents))
+
 	for _ , t := range dawnTorrentClient.torrents{
 
 		command := new(Command)
@@ -166,14 +180,14 @@ func(dawnTorrentClient *DawnTorrentClient) getClientInitData(ipcMsg *IpcMsg ) *I
 }
 
 
-
 type Command struct {
 	Command        int
 	TorrentIPCData *PeerProtocol.TorrentIPCData
 }
 
 type IpcMsg struct {
-	Commands []*Command
+	CommandType int
+	Commands    []*Command
 }
 
 

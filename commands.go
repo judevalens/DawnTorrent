@@ -6,6 +6,6 @@ const (
 	PauseTorrent = 2
 	ResumeTorrent = 3
 	CloseClient = 4
-	InitClient = 5
+	InitClient = -1
 	updateUI = 6
 )

@@ -38,6 +38,7 @@ func InitTorrentFile(torrent *Torrent, torrentPath string) *TorrentFile {
 	infoHashString, infoHashByte := GetInfoHash(metaInfo)
 	file.InfoHash = infoHashString
 	file.infoHashByte = infoHashByte
+	file.InfoHashHex = hex.EncodeToString(file.infoHashByte[:20])
 	file.Announce = metaInfo.MapString["announce"]
 
 	file.AnnounceList = make([]string, 0)
@@ -66,7 +67,7 @@ func InitTorrentFile(torrent *Torrent, torrentPath string) *TorrentFile {
 		fileInfos = append(fileInfos, newFileInfo(fileInfos, filePath, fileLength, 0))
 	}
 	file.subPieceLen = SubPieceLen
-	initFile(file, fileInfos, totalLength, totalLength, nil, stoppedState)
+	initFile(file, fileInfos, totalLength, totalLength, nil, StoppedState)
 
 	file.PieceSelectionBehavior = "random"
 	file.SelectNewPiece = true
@@ -109,7 +110,7 @@ func resumeTorrentFile(path string) *TorrentFile {
 	pieceHash, _ := ioutil.ReadFile(pieceHashPath)
 	file.piecesSha1Hash = string(pieceHash)
 	 //will create the pieces
-	initFile(file, torrentData.FileInfos, torrentData.FileLen, torrentData.Left, torrentData.Pieces, torrentData.Status)
+	initFile(file, torrentData.FileInfos, torrentData.FileLen, torrentData.Left, torrentData.Pieces, torrentData.State)
 	fmt.Printf("\nfile info\n file name : %v \n fileLen  %v \n pieceLen %v\n subPieceLen %v\n infoHash %v\n", file.Name, file.FileLen, file.pieceLength,file.subPieceLen,file.InfoHash)
 
 	return file
@@ -126,14 +127,12 @@ func (file *TorrentFile) saveTorrent() {
 	SavedTorrentData.PieceLength = file.pieceLength
 	///	SavedTorrentData.PiecesSha1 = file.piecesSha1Hash
 
-	i := []byte(file.piecesSha1Hash)
 
-	fmt.Printf("len sha1 %v", i)
 	SavedTorrentData.Left = file.left
 	SavedTorrentData.FileLen = file.FileLen
 	SavedTorrentData.SubPieceLen = file.subPieceLen
 	SavedTorrentData.Name = file.Name
-	SavedTorrentData.Status = int(atomic.LoadInt32(file.Status))
+	SavedTorrentData.State = int(atomic.LoadInt32(file.Status))
 
 	pieces := make([]*Piece, file.nPiece)
 
@@ -141,7 +140,7 @@ func (file *TorrentFile) saveTorrent() {
 		newPiece := new(Piece)
 
 		file.PiecesMutex.Lock()
-		newPiece.Status = p.Status
+		newPiece.State = p.State
 		newPiece.PieceIndex = p.PieceIndex
 		file.PiecesMutex.Unlock()
 		pieces[i] = newPiece
@@ -163,13 +162,13 @@ func (file *TorrentFile) saveTorrent() {
 		_ = ioutil.WriteFile(pieceHashPath, []byte(file.piecesSha1Hash), os.ModePerm)
 	}
 
-	savedTorrentDataPath := utils.GetPath(utils.TorrentDataPath, file.Name)
-	wErr := ioutil.WriteFile(savedTorrentDataPath, SavedTorrentDataBuffer.Bytes(), os.ModePerm)
+	/*savedTorrentDataPath := utils.GetPath(utils.TorrentDataPath, file.Name)
+	//wErr := ioutil.WriteFile(savedTorrentDataPath, SavedTorrentDataBuffer.Bytes(), os.ModePerm)
 	if wErr != nil {
 		fmt.Printf("%v", wErr)
 		//os.Exit(222)
 	}
-
+*/
 }
 func (file *TorrentFile) saveTorrentForUiUpdate() {
 	SavedTorrentData := new(SavedTorrentData)
@@ -188,7 +187,7 @@ func (file *TorrentFile) saveTorrentForUiUpdate() {
 	SavedTorrentData.FileLen = file.FileLen
 	SavedTorrentData.SubPieceLen = file.subPieceLen
 	SavedTorrentData.Name = file.Name
-	SavedTorrentData.Status = int(atomic.LoadInt32(file.Status))
+	SavedTorrentData.State = int(atomic.LoadInt32(file.Status))
 
 	pieces := make([]*Piece, file.nPiece)
 
@@ -196,7 +195,7 @@ func (file *TorrentFile) saveTorrentForUiUpdate() {
 		newPiece := new(Piece)
 
 		file.PiecesMutex.Lock()
-		newPiece.Status = p.Status
+		newPiece.State = p.State
 		newPiece.PieceIndex = p.PieceIndex
 		file.PiecesMutex.Unlock()
 		pieces[i] = newPiece
@@ -250,7 +249,7 @@ func initFile(file *TorrentFile, fileInfos []*fileInfo, fileTotalLength, left in
 		thisPieceStatus := EmptyPiece
 
 		if pieces != nil {
-			thisPieceStatus = pieces[i].Status
+			thisPieceStatus = pieces[i].State
 		}
 		file.Pieces[i] = NewPiece(file, i, pieceLen, thisPieceStatus)
 		//file.Pieces[i].Availability = i
@@ -338,7 +337,7 @@ func NewPiece(torrentFile *TorrentFile, PieceIndex, pieceLength int, status int)
 	newPiece.pieceStartIndex = PieceIndex * torrentFile.pieceLength
 	newPiece.pieceEndIndex = newPiece.pieceStartIndex + newPiece.Len
 	newPiece.Pieces = make([]byte, newPiece.Len)
-	newPiece.Status = status
+	newPiece.State = status
 	newPiece.subPieceMask = make([]byte, int(math.Ceil(float64(torrentFile.nSubPiece)/float64(8))))
 	newPiece.pendingRequestMutex = new(sync.RWMutex)
 	newPiece.pendingRequest = make([]*PieceRequest, 0)
@@ -409,7 +408,7 @@ func (file *TorrentFile) AddSubPiece(msg *MSG, peer *Peer) error {
 	// when a peer send a requested piece , the pending request object is removed from the peer pending request list
 	msg.Peer.peerPendingRequestMutex.Lock()
 	nPendingRequest := len(msg.Peer.peerPendingRequest)
-	for i := nPendingRequest; i >= 0; i++ {
+	for i := nPendingRequest; i >= 0; i-- {
 
 		if i < len(msg.Peer.peerPendingRequest) {
 			pendingRequest := msg.Peer.peerPendingRequest[i]
@@ -426,83 +425,88 @@ func (file *TorrentFile) AddSubPiece(msg *MSG, peer *Peer) error {
 	}
 	msg.Peer.peerPendingRequestMutex.Unlock()
 
-		if atomic.LoadInt32(file.Status) == int32(startedState){
+		if atomic.LoadInt32(file.Status) == int32(StartedState){
 
 	// determines which piece this subPiece belongs to
 	currentPiece := file.Pieces[msg.PieceIndex]
 	subPieceIndex := int(math.Ceil(float64(msg.BeginIndex / SubPieceLen)))
 	subPieceBitMaskIndex := int(math.Ceil(float64(subPieceIndex / 8)))
 	subPieceBitIndex := subPieceIndex % 8
-	file.PiecesMutex.Lock()
-	isEmpty := utils.IsBitOn(currentPiece.subPieceMask[subPieceBitMaskIndex], subPieceBitIndex) == false
-	currentPiece.subPieceMask[subPieceBitMaskIndex] = utils.BitMask(currentPiece.subPieceMask[subPieceBitMaskIndex], []int{subPieceBitIndex}, 1)
-	file.PiecesMutex.Unlock()
 
-	// if we haven't already receive this piece , we saved it
-	if isEmpty {
-		if msg.PieceIndex != file.CurrentPieceIndex {
-			fmt.Printf("msg Piece App %v current Piece App %v", msg.PieceIndex, file.CurrentPieceIndex)
-			os.Exit(223444)
-		}
+	if subPieceBitMaskIndex < len(currentPiece.subPieceMask) {
 
-		currentPiece.pendingRequestMutex.Lock()
-		for i := len(currentPiece.pendingRequest) - 1; i >= 0; i-- {
-
-			if msg.BeginIndex == currentPiece.pendingRequest[i].startIndex {
-				currentPiece.pendingRequest[i], currentPiece.pendingRequest[len(currentPiece.pendingRequest)-1] = currentPiece.pendingRequest[len(currentPiece.pendingRequest)-1], nil
-
-				currentPiece.pendingRequest = currentPiece.pendingRequest[:len(currentPiece.pendingRequest)-1]
-
-				break
-			}
-		}
-		currentPiece.pendingRequestMutex.Unlock()
-
-		///fmt.Printf("Piece COunter %v\n",file.torrent.PieceCounter)
-		file.torrent.PieceCounter++
 		file.PiecesMutex.Lock()
-		currentPiece.CurrentLen += len(msg.Piece)
-		file.TotalDownloaded += msg.PieceLen
-		file.left -= msg.PieceLen
-		fmt.Printf("downloaded %v mb in %v \n", file.TotalDownloaded/1000000.0, time.Now().Sub(file.timeS))
-
-		copy(currentPiece.Pieces[msg.BeginIndex:msg.BeginIndex+msg.PieceLen], msg.Piece)
-
-		// piece is complete add it to the file
-		isPieceComplete := currentPiece.Len == currentPiece.CurrentLen
+		isEmpty := utils.IsBitOn(currentPiece.subPieceMask[subPieceBitMaskIndex], subPieceBitIndex) == false
+		currentPiece.subPieceMask[subPieceBitMaskIndex] = utils.BitMask(currentPiece.subPieceMask[subPieceBitMaskIndex], []int{subPieceBitIndex}, 1)
 		file.PiecesMutex.Unlock()
 
-		// once a piece is complete we write the it to file
-		if isPieceComplete {
-			delete(file.NeededPiece, currentPiece.PieceIndex)
-			currentPiece.Status = CompletePiece
-			file.SelectNewPiece = true
-			//	fmt.Printf("piece %v is complete\n",currentPiece.PieceIndex)
-
-			//	a piece can contains data that goes into multiple files
-			// pos struct contains start and end index , that indicates into which file a particular slice of data goes
-			for _, pos := range currentPiece.position {
-				currentFile := file.Files[pos.fileIndex]
-
-				if _, err := os.Stat(utils.TorrentHomeDir); os.IsNotExist(err) {
-					_ = os.MkdirAll(utils.TorrentHomeDir, os.ModePerm)
-				}
-
-				f, _ := os.OpenFile(utils.TorrentHomeDir+"/"+currentFile.Path, os.O_CREATE|os.O_RDWR, os.ModePerm)
-
-				//getting the length of the piece
-				pieceRelativeLen := pos.end - pos.start
-				pieceRelativeStart := pos.start - (currentPiece.PieceIndex * file.pieceLength)
-				pieceRelativeEnd := pieceRelativeStart + pieceRelativeLen
-				_, _ = f.WriteAt(currentPiece.Pieces[pieceRelativeStart:pieceRelativeEnd], int64(pos.writingIndex))
+		// if we haven't already receive this piece , we saved it
+		if isEmpty {
+			if msg.PieceIndex != file.CurrentPieceIndex {
+				fmt.Printf("msg Piece App %v current Piece App %v", msg.PieceIndex, file.CurrentPieceIndex)
+				os.Exit(223444)
 			}
 
-			currentPiece.Pieces = make([]byte, 0)
-		} else {
-			//	fmt.Printf("not complete yet , %v/%v pieceindex : %v\n",currentPiece.Len,currentPiece.CurrentLen,currentPiece.PieceIndex)
-			currentPiece.Status = InProgressPiece
-			file.SelectNewPiece = false
+			currentPiece.pendingRequestMutex.Lock()
+			for i := len(currentPiece.pendingRequest) - 1; i >= 0; i-- {
+
+				if msg.BeginIndex == currentPiece.pendingRequest[i].startIndex {
+					currentPiece.pendingRequest[i], currentPiece.pendingRequest[len(currentPiece.pendingRequest)-1] = currentPiece.pendingRequest[len(currentPiece.pendingRequest)-1], nil
+
+					currentPiece.pendingRequest = currentPiece.pendingRequest[:len(currentPiece.pendingRequest)-1]
+
+					break
+				}
+			}
+			currentPiece.pendingRequestMutex.Unlock()
+
+			///fmt.Printf("Piece COunter %v\n",file.torrent.PieceCounter)
+			file.torrent.PieceCounter++
+			file.PiecesMutex.Lock()
+			currentPiece.CurrentLen += len(msg.Piece)
+			file.TotalDownloaded += msg.PieceLen
+			file.left -= msg.PieceLen
+			fmt.Printf("downloaded %v mb in %v \n", file.TotalDownloaded/1000000.0, time.Now().Sub(file.timeS))
+
+			copy(currentPiece.Pieces[msg.BeginIndex:msg.BeginIndex+msg.PieceLen], msg.Piece)
+
+			// piece is complete add it to the file
+			isPieceComplete := currentPiece.Len == currentPiece.CurrentLen
+			file.PiecesMutex.Unlock()
+
+			// once a piece is complete we write the it to file
+			if isPieceComplete {
+				delete(file.NeededPiece, currentPiece.PieceIndex)
+				currentPiece.State = CompletePiece
+				file.SelectNewPiece = true
+				//	fmt.Printf("piece %v is complete\n",currentPiece.PieceIndex)
+
+				//	a piece can contains data that goes into multiple files
+				// pos struct contains start and end index , that indicates into which file a particular slice of data goes
+				for _, pos := range currentPiece.position {
+					currentFile := file.Files[pos.fileIndex]
+
+					if _, err := os.Stat(utils.TorrentHomeDir); os.IsNotExist(err) {
+						_ = os.MkdirAll(utils.TorrentHomeDir, os.ModePerm)
+					}
+
+					f, _ := os.OpenFile(utils.TorrentHomeDir+"/"+currentFile.Path, os.O_CREATE|os.O_RDWR, os.ModePerm)
+
+					//getting the length of the piece
+					pieceRelativeLen := pos.end - pos.start
+					pieceRelativeStart := pos.start - (currentPiece.PieceIndex * file.pieceLength)
+					pieceRelativeEnd := pieceRelativeStart + pieceRelativeLen
+					_, _ = f.WriteAt(currentPiece.Pieces[pieceRelativeStart:pieceRelativeEnd], int64(pos.writingIndex))
+				}
+
+				currentPiece.Pieces = make([]byte, 0)
+			} else {
+				//	fmt.Printf("not complete yet , %v/%v pieceindex : %v\n",currentPiece.Len,currentPiece.CurrentLen,currentPiece.PieceIndex)
+				currentPiece.State = InProgressPiece
+				file.SelectNewPiece = false
+			}
 		}
+
 	}
 
 	}
@@ -521,7 +525,7 @@ func (file *TorrentFile) AddSubPiece(msg *MSG, peer *Peer) error {
 		peer.numByteDownloaded += msg.PieceLen
 	}
 
-	fmt.Printf("peer: %v , download rate: %v byte/s \n", msg.Peer.ip, peer.DownloadRate)
+//	fmt.Printf("peer: %v , download rate: %v byte/s \n", msg.Peer.ip, peer.DownloadRate)
 
 	return err
 }
