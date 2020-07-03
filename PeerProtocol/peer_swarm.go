@@ -17,6 +17,8 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
+
 	//"os"
 	"strconv"
 	"sync"
@@ -122,10 +124,10 @@ func (peerSwarm *PeerSwarm) connect(peer *Peer) {
 				atomic.AddInt32(peerSwarm.nActiveConnection, 1)
 				peerSwarm.peerMutex.Unlock()
 				peerSwarm.activeConnectionMutex.Unlock()
-				peerSwarm.torrent.requestQueue.Add(GetMsg(MSG{MsgID: UnchockeMsg}, peer))
+				peerSwarm.torrent.jobQueue.AddJob(GetMsg(MSG{MsgID: UnchockeMsg}, peer))
 
 
-				peerSwarm.torrent.requestQueue.Add(GetMsg(MSG{MsgID: InterestedMsg}, peer))
+				peerSwarm.torrent.jobQueue.AddJob(GetMsg(MSG{MsgID: InterestedMsg}, peer))
 				peerSwarm.PeerByDownloadRateMutex.Lock()
 				peerSwarm.PeerByDownloadRate.Add(peer)
 				peerSwarm.PeerByDownloadRateMutex.Unlock()
@@ -164,7 +166,7 @@ func (peerSwarm *PeerSwarm) handleNewPeer(connection *net.TCPConn) {
 				peerSwarm.PeerByDownloadRateMutex.Lock()
 				peerSwarm.PeerByDownloadRate.Add(newPeer)
 				peerSwarm.PeerByDownloadRateMutex.Unlock()
-				peerSwarm.torrent.requestQueue.Add(GetMsg(MSG{MsgID: InterestedMsg}, newPeer))
+				peerSwarm.torrent.jobQueue.AddJob(GetMsg(MSG{MsgID: InterestedMsg}, newPeer))
 				peerSwarm.DropConnection(newPeer)
 				_ = newPeer.receive(connection, peerSwarm)
 			}else{
@@ -408,7 +410,9 @@ var trackerErr error
 }
 
 func (peerSwarm *PeerSwarm) trackerRegularRequest(){
+
 	for atomic.LoadInt32(peerSwarm.torrent.File.Status) == StartedState {
+
 		var peersFromTracker *parser.Dict
 		var trackerErr error
 
@@ -437,20 +441,27 @@ func (peerSwarm *PeerSwarm) trackerRegularRequest(){
 			randomPeer := randomSeed.Perm(len(peerSwarm.Peers))
 			maxPeer := math.Ceil((5 / 5.0) * float64(len(peerSwarm.Peers)))
 			//fmt.Printf("max peer %v", maxPeer)
-
+			//_ = randomPeer
 			for i := 0; i < int(maxPeer); i++ {
+				fmt.Printf("stuck\n")
 				go peerSwarm.connect(peerSwarm.Peers[randomPeer[i]])
 			}
 		}else{
 			log.Fatal("tracker PieceRequest failed")
 		}
 
+		if peerSwarm.trackerInterval == 0{
+			os.Exit(2222)
+		}
+
 
 		time.Sleep(time.Duration(time.Second.Seconds()*1000000000*float64(peerSwarm.trackerInterval)))
 	}
+
 }
 
 func (peerSwarm *PeerSwarm) killSwarm()  {
+	peerSwarm.peerMutex.Lock()
 	peerKeyI := peerSwarm.activeConnection.Keys()
 
 
@@ -467,6 +478,8 @@ func (peerSwarm *PeerSwarm) killSwarm()  {
 
 	peerSwarm.activeConnection.Clear()
 	peerSwarm.PeerByDownloadRate.Clear()
+	peerSwarm.peerMutex.Unlock()
+
 }
 
 func (peerSwarm *PeerSwarm) trackerRequestEvent(){
@@ -516,11 +529,9 @@ func (peerSwarm *PeerSwarm) NewPeerFromString(peer []byte) (string, string, stri
 	return ipString, strconv.FormatUint(uint64(portBytes), 10), ipString + ":" + newPeer.port
 }
 func (peerSwarm *PeerSwarm) DropConnection(peer *Peer) {
-	peerSwarm.activeConnectionMutex.Lock()
 	peer.connection = nil
 	peerSwarm.activeConnection.Remove(peer.id)
 	atomic.AddInt32(peerSwarm.nActiveConnection, -1)
-	peerSwarm.PeerByDownloadRateMutex.Lock()
 
 	for p:= 0; p < peerSwarm.PeerByDownloadRate.Size(); p++{
 
@@ -533,9 +544,8 @@ func (peerSwarm *PeerSwarm) DropConnection(peer *Peer) {
 		}
 
 	}
-	peerSwarm.PeerByDownloadRateMutex.Unlock()
+	peer = nil
 
-	peerSwarm.activeConnectionMutex.Unlock()
 }
 func (peerSwarm *PeerSwarm) addNewPeer(peerIp, peerPort, peerID string) *Peer {
 	peerDict := new(parser.Dict)
@@ -647,7 +657,7 @@ func (peer *Peer) receive(connection *net.TCPConn, peerSwarm *PeerSwarm) error {
 				peerSwarm.torrent.msgRouter(parsedMsg)
 
 			}else{
-				peerSwarm.torrent.incomingMsgQueue.Add(parsedMsg)
+				peerSwarm.torrent.jobQueue.AddJob(parsedMsg)
 
 			}
 			//peerSwarm.DawnTorrent.msgRouter(parsedMsg)
@@ -687,13 +697,13 @@ func(peer *Peer) isPeerFree () bool{
 	}
 
 
-	if nPendingRequest < 5{
+	if nPendingRequest < 1{
 		peer.isFree = true
 	}else {
 		for r:= nPendingRequest-1; r >= 0; r--{
 			pendingRequest := peer.peerPendingRequest[r]
 
-			if time.Now().Sub(pendingRequest.timeStamp).Seconds() >=time.Second.Seconds()*1.5{
+			if time.Now().Sub(pendingRequest.timeStamp).Seconds() >= maxWaitingTime.Seconds(){
 				peer.peerPendingRequest[r], peer.peerPendingRequest[len(peer.peerPendingRequest)-1] = peer.peerPendingRequest[len(peer.peerPendingRequest)-1],nil
 
 				peer.peerPendingRequest = peer.peerPendingRequest[:len(peer.peerPendingRequest)-1]

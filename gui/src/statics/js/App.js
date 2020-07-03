@@ -13,6 +13,7 @@ var Command;
     Command[Command["DeleteTorrent"] = 1] = "DeleteTorrent";
     Command[Command["PauseTorrent"] = 2] = "PauseTorrent";
     Command[Command["ResumeTorrent"] = 3] = "ResumeTorrent";
+    Command[Command["GetProgress"] = 4] = "GetProgress";
     Command[Command["CloseClient"] = -2] = "CloseClient";
     Command[Command["InitClient"] = -1] = "InitClient";
 })(Command = exports.Command || (exports.Command = {}));
@@ -37,6 +38,7 @@ var App = /** @class */ (function () {
         this.torrents = {};
         this.setIpcListener();
         electron_1.ipcRenderer.send('addMsgFromToQueue', this.getMsgForClient(Command.InitClient));
+        this.getProgress();
     }
     App.prototype.getMsgForTorrent = function (command, infoHash, path, addMode) {
         return {
@@ -241,14 +243,53 @@ var App = /** @class */ (function () {
             //this.torrents
         });
     };
+    App.prototype.getProgress = function () {
+        var _this = this;
+        var i = 0;
+        var y = 0;
+        console.log("helP!!!!!!!");
+        setInterval(function () {
+            var _a, _b;
+            var key;
+            console.log("requesting update ......");
+            for (key in _this.torrents) {
+                // @ts-ignore
+                // @ts-ignore
+                var torrent = _this.torrents[key];
+                // @ts-ignore
+                // @ts-ignore
+                if (torrent.TorrentIPCData.State == TorrentState.startedState) {
+                    y = -1;
+                    // @ts-ignore
+                    var torrentInfoHash = torrent.TorrentIPCData.InfoHash;
+                    electron_1.ipcRenderer.send('addMsgFromToQueue', _this.getMsgForTorrent(Command.GetProgress, torrentInfoHash, undefined));
+                    // @ts-ignore
+                }
+                if (y != 0) {
+                    // @ts-ignore
+                    torrent.selected = true;
+                    if (i % 2 == 0) {
+                        (_a = _this.startTorrentButton) === null || _a === void 0 ? void 0 : _a.click();
+                    }
+                    else {
+                        (_b = _this.pauseTorrentButton) === null || _b === void 0 ? void 0 : _b.click();
+                    }
+                    i++;
+                    console.log(i);
+                }
+            }
+        }, 200);
+    };
     App.prototype.updateTorrent = function (command) {
         // @ts-ignore
         var playResumeButton = document.getElementById(command.TorrentIPCData.InfoHash).getElementsByClassName("playResume")[0];
         // @ts-ignore
-        var torrentState = document.getElementById(command.TorrentIPCData.InfoHash).getElementsByClassName("torrentStatus")[0];
+        var currentTorrent = document.getElementById(command.TorrentIPCData.InfoHash);
         // @ts-ignore
         switch (command.Command) {
             case Command.PauseTorrent:
+                // @ts-ignore
+                var torrentState = currentTorrent.getElementsByClassName("torrentStatus")[0];
                 // @ts-ignore
                 this.torrents[command.TorrentIPCData.InfoHash].TorrentIPCData.State = command.TorrentIPCData.State;
                 console.log("State changed to");
@@ -259,11 +300,40 @@ var App = /** @class */ (function () {
                 break;
             case Command.ResumeTorrent:
                 // @ts-ignore
+                var torrentState = currentTorrent.getElementsByClassName("torrentStatus")[0];
+                // @ts-ignore
                 this.torrents[command.TorrentIPCData.InfoHash].TorrentIPCData.State = command.TorrentIPCData.State;
                 console.log("State changed to");
                 // @ts-ignore
                 console.log(this.torrents);
+                // @ts-ignore
                 torrentState.textContent = "downloading";
+                break;
+            case Command.GetProgress:
+                // @ts-ignore
+                var currentLen = command.TorrentIPCData.CurrentLen;
+                // @ts-ignore
+                var totalLen = this.torrents[command.TorrentIPCData.InfoHash].TorrentIPCData.Len;
+                // @ts-ignore
+                var currentDownloadSpeed = command.TorrentIPCData.DownloadRate;
+                // @ts-ignore
+                this.torrents[command.TorrentIPCData.InfoHash].TorrentIPCData.CurrentLen = currentLen;
+                console.log("progress update ........");
+                var torrentProgressBar = currentTorrent.getElementsByClassName("torrentProgressBar")[0];
+                var torrentProgressData = torrentProgressBar.getElementsByClassName("torrentProgressData")[0];
+                var downloadSpeed = currentTorrent.getElementsByClassName("torrentDownloadSpeed")[0];
+                // @ts-ignore
+                var percent = (currentLen / totalLen) * 100;
+                // @ts-ignore
+                torrentProgressBar.setAttribute("aria-valuenow", percent);
+                // @ts-ignore
+                torrentProgressBar.style.width = percent + "%";
+                console.log(percent);
+                var currentLenSt = this.bytesToSize(currentLen);
+                var totalLenSt = this.bytesToSize(totalLen);
+                torrentProgressData.textContent = percent.toFixed(2) + "% (" + currentLenSt + "/" + totalLenSt + ")";
+                var downloadSpeedNumber = this.bytesToSize(currentDownloadSpeed);
+                downloadSpeed.textContent = downloadSpeedNumber + "/s";
                 break;
         }
     };
@@ -287,6 +357,9 @@ var App = /** @class */ (function () {
                     case Command.PauseTorrent:
                         this.updateTorrent(command);
                         break;
+                    case Command.GetProgress:
+                        this.updateTorrent(command);
+                        break;
                 }
             }
         }
@@ -297,6 +370,15 @@ var App = /** @class */ (function () {
                     this.initClient(msg);
             }
         }
+    };
+    App.prototype.bytesToSize = function (bytes) {
+        var sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+        if (bytes == 0)
+            return 'n/a';
+        var i = Math.floor(Math.log(bytes) / Math.log(1024));
+        if (i == 0)
+            return bytes + ' ' + sizes[i];
+        return (bytes / Math.pow(1024, i)).toFixed(1) + ' ' + sizes[i];
     };
     return App;
 }());

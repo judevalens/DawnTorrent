@@ -7,6 +7,7 @@ export enum Command {
     DeleteTorrent = 1,
     PauseTorrent = 2,
     ResumeTorrent = 3,
+    GetProgress = 4,
     CloseClient = -2,
     InitClient = -1 ,
 
@@ -44,6 +45,7 @@ export class App {
         this.torrents = {}
         this.setIpcListener()
       ipcRenderer.send('addMsgFromToQueue', this.getMsgForClient(Command.InitClient))
+        this.getProgress()
 
     }
 
@@ -286,15 +288,56 @@ export class App {
         })
     }
 
+    getProgress(){
+        let i : number = 0
+        let y = 0
+        console.log("helP!!!!!!!")
+        setInterval(()=>{
+            let key : string
+            console.log("requesting update ......")
+            for (key in this.torrents){
+                // @ts-ignore
+                // @ts-ignore
+                const torrent : object = this.torrents[key]
+                // @ts-ignore
+                // @ts-ignore
+                if (torrent.TorrentIPCData.State == TorrentState.startedState){
+                    y = -1
+                    // @ts-ignore
+                    const torrentInfoHash : string =   torrent.TorrentIPCData.InfoHash
+                    ipcRenderer.send('addMsgFromToQueue', this.getMsgForTorrent(Command.GetProgress,torrentInfoHash,undefined))
+                    // @ts-ignore
+                }
+                if (y != 0){
+                    // @ts-ignore
+                    torrent.selected = true
+
+                    if (i % 2 == 0){
+                    this.startTorrentButton?.click()
+
+                    }else{
+                      this.pauseTorrentButton?.click()
+                    }
+                    i++
+                    console.log(i)
+                }
+
+            }
+        },200)
+    }
+
     updateTorrent(command: Command) {
         // @ts-ignore
         const playResumeButton: HTMLElement | null = document.getElementById(command.TorrentIPCData.InfoHash).getElementsByClassName("playResume")[0]
         // @ts-ignore
-        const torrentState : Element = document.getElementById(command.TorrentIPCData.InfoHash).getElementsByClassName("torrentStatus")[0]
+        const currentTorrent : Element = document.getElementById(command.TorrentIPCData.InfoHash)
 
         // @ts-ignore
         switch (command.Command) {
             case Command.PauseTorrent:
+
+                // @ts-ignore
+                let torrentState : Element = currentTorrent.getElementsByClassName("torrentStatus")[0]
 
                 // @ts-ignore
                 this.torrents[command.TorrentIPCData.InfoHash].TorrentIPCData.State = command.TorrentIPCData.State
@@ -305,12 +348,49 @@ export class App {
                 // @ts-ignore
                 break;
             case Command.ResumeTorrent:
+
+                // @ts-ignore
+                let torrentState : Element = currentTorrent.getElementsByClassName("torrentStatus")[0]
                 // @ts-ignore
                 this.torrents[command.TorrentIPCData.InfoHash].TorrentIPCData.State = command.TorrentIPCData.State
                 console.log("State changed to")
                 // @ts-ignore
                 console.log(this.torrents)
+                // @ts-ignore
                 torrentState.textContent ="downloading"
+                break
+            case Command.GetProgress:
+                // @ts-ignore
+                const currentLen :number = command.TorrentIPCData.CurrentLen
+                // @ts-ignore
+                const totalLen : number = this.torrents[command.TorrentIPCData.InfoHash].TorrentIPCData.Len
+
+                // @ts-ignore
+                const currentDownloadSpeed : number = command.TorrentIPCData.DownloadRate
+
+                // @ts-ignore
+                this.torrents[command.TorrentIPCData.InfoHash].TorrentIPCData.CurrentLen = currentLen
+                console.log("progress update ........")
+                let torrentProgressBar : Element =  currentTorrent.getElementsByClassName("torrentProgressBar")[0]
+                let torrentProgressData : Element = torrentProgressBar.getElementsByClassName("torrentProgressData")[0]
+                let downloadSpeed : Element = currentTorrent.getElementsByClassName("torrentDownloadSpeed")[0]
+                // @ts-ignore
+                const percent = (currentLen/totalLen)*100
+                // @ts-ignore
+                torrentProgressBar.setAttribute("aria-valuenow",percent)
+                // @ts-ignore
+                torrentProgressBar.style.width = percent+ "%"
+                console.log(percent)
+
+               const currentLenSt :string = this.bytesToSize(currentLen)
+                const totalLenSt : string =  this.bytesToSize(totalLen)
+
+                torrentProgressData.textContent = percent.toFixed(2) +"% ("+currentLenSt+"/"+totalLenSt+")"
+
+                const downloadSpeedNumber : string = this.bytesToSize(currentDownloadSpeed)
+
+                downloadSpeed.textContent = downloadSpeedNumber+"/s"
+
                 break
         }
     }
@@ -332,7 +412,10 @@ export class App {
                         this.updateTorrent(command)
                         break;
                     case Command.PauseTorrent:
-                        this.updateTorrent(command)
+                        this.updateTorrent(command);
+                        break
+                    case Command.GetProgress :
+                        this.updateTorrent(command);
                         break;
                 }
             }
@@ -346,6 +429,14 @@ export class App {
             }
         }
 
+    }
+
+     bytesToSize(bytes : number) {
+        const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+        if (bytes == 0) return 'n/a';
+        const i : number =Math.floor(Math.log(bytes) / Math.log(1024))
+        if (i == 0) return bytes + ' ' + sizes[i];
+        return (bytes / Math.pow(1024, i)).toFixed(1) + ' ' + sizes[i];
     }
 
 

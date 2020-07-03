@@ -5,7 +5,8 @@ const (
 	DeleteTorrent  = 1
 	PauseTorrent = 2
 	ResumeTorrent = 3
-	CloseClient = 4
+	GetProgress = 4
+	CloseClient = -2
 	InitClient = -1
 	updateUI = 6
 )

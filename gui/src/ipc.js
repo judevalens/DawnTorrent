@@ -56,6 +56,7 @@ var Ipc = /** @class */ (function () {
         var execFile = require('child_process');
         this.socket = new zm.Request();
         this.socket.connect("tcp://127.0.0.1:5555");
+        this.socket.receiveTimeout = 1000;
         this.Queue = new Array();
         this.setIpcListener();
         this.execJob();
@@ -97,6 +98,9 @@ var Ipc = /** @class */ (function () {
                                 console.log("answer ", answer[0].toString());
                                 msg_1.replyEvent.reply("answer", answer[0].toString());
                                 isBusy = false;
+                            }).catch(function (reason) {
+                                isBusy = false;
+                                console.log("req failedddd!");
                             })];
                     case 1:
                         _a.sent();

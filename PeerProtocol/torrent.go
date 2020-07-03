@@ -35,6 +35,7 @@ type TorrentFile struct {
 	pieceLength    int
 	Name           string
 	NeededPiece                map[int]*Piece
+	PieceHolder				[]*byte
 	currentPiece               *Piece
 	PieceSelectionBehavior     string
 	SelectNewPiece             bool
@@ -48,6 +49,10 @@ type TorrentFile struct {
 	PieceAvailability          *arraylist.List
 	PieceAvailabilityTimeStamp time.Time
 	Status                     *int32
+	downloadRateMutex          *sync.Mutex
+	tempDownloadCounter        int
+	DownloadRate               float64
+	downloadRateTimeStamp      time.Time
 }
 
 type fileInfo struct {
@@ -137,6 +142,8 @@ type TorrentIPCData struct {
 	Command      int
 	AddMode      int
 	FileInfos    []*fileInfo
+	DownloadRate				float64
+
 }
 
 

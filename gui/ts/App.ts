@@ -13,8 +13,8 @@ export default class Main{
     createWindow(){
         // Create the browser window.
         const mainWindow = new BrowserWindow({
-            width: 800,
-            height: 600,
+            width: 1200,
+            height: 720,
             webPreferences: {
                 nodeIntegration: true
             }

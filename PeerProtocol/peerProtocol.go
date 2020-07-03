@@ -4,10 +4,12 @@ import (
 	"DawnTorrent/JobQueue"
 	"errors"
 	"fmt"
+	"log"
 	"math"
 	"math/rand"
 	"os"
 	"sort"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -22,13 +24,38 @@ type Torrent struct {
 	requestQueue     *JobQueue.Queue
 	incomingMsgQueue *JobQueue.Queue
 	pieceQueue       *JobQueue.Queue
-	PieceCounter     int
-	chokeCounter     int
-	done             chan bool
+
+	jobQueue *JobQueue.WorkerPool
+
+	PieceCounter int
+	chokeCounter int
+	done         chan bool
+	lifeCycleWG  *sync.WaitGroup
+	StartedState        chan int
+	StoppedState chan int
+
+
+	stopPieceRequestLoop chan bool
+	stopTrackerLoop chan bool
+
+
+	PieceRequestManagerPeriodicFunc  *periodicFunc
 }
 
 func NewTorrent(torrentPath string, mode int) *Torrent {
 	torrent := new(Torrent)
+	torrent.StartedState = make(chan int)
+	torrent.StoppedState = make(chan int)
+	torrent.stopPieceRequestLoop = make(chan bool)
+	torrent.stopTrackerLoop = make(chan bool)
+	torrent.lifeCycleWG  = new(sync.WaitGroup)
+
+
+	torrent.PieceRequestManagerPeriodicFunc = newPeriodicFunc(torrent.PieceRequestManager2)
+
+
+
+
 	fmt.Printf("mode %v",mode)
 	if mode == InitTorrentFile_ {
 		// creates a brand new Torrent
@@ -38,42 +65,42 @@ func NewTorrent(torrentPath string, mode int) *Torrent {
 		torrent.File = resumeTorrentFile(torrentPath)
 	}
 	torrent.PeerSwarm = NewPeerSwarm(torrent)
-	torrent.requestQueue = JobQueue.NewQueue(torrent)
-	torrent.incomingMsgQueue = JobQueue.NewQueue(torrent)
-	torrent.pieceQueue = JobQueue.NewQueue(torrent)
-	torrent.requestQueue.Run(1)
-	torrent.incomingMsgQueue.Run(1)
-	torrent.pieceQueue.Run(1)
+	//torrent.requestQueue = JobQueue.NewQueue(torrent)
+	//torrent.incomingMsgQueue = JobQueue.NewQueue(torrent)
+	//torrent.pieceQueue = JobQueue.NewQueue(torrent)
+	//torrent.requestQueue.Run(1)
+	//torrent.incomingMsgQueue.Run(1)
+	//torrent.pieceQueue.Run(1)
+
+	torrent.jobQueue = JobQueue.NewWorkerPool(torrent,15)
+
+	torrent.jobQueue.Start()
 	return torrent
 }
 func (torrent *Torrent) ResumeFromPause() {
-	torrent.File.setState(StartedState)
-	go torrent.PeerSwarm.trackerRegularRequest()
-	go torrent.PieceRequestManager()
-
+		go torrent.PeerSwarm.trackerRegularRequest()
 }
 func (torrent *Torrent) Pause() {
-	fmt.Printf("\n file test %v\n",torrent.File.InfoHashHex)
-
-	currentPiece := torrent.File.Pieces[torrent.File.CurrentPieceIndex]
-	fmt.Printf("before len of neededSUb :%v\n",len(currentPiece.neededSubPiece))
-
-	for _,req := range currentPiece.pendingRequest{
-		req.status = nonStartedRequest
-		currentPiece.neededSubPiece  = append(currentPiece.neededSubPiece,req)
-	}
-
-	currentPiece.pendingRequest = make([]*PieceRequest,0)
+		fmt.Printf("\n file test %v\n", torrent.File.InfoHashHex)
+	torrent.File.PiecesMutex.Lock()
+		currentPiece := torrent.File.Pieces[torrent.File.CurrentPieceIndex]
+		fmt.Printf("before len of neededSUb :%v\n", len(currentPiece.neededSubPiece))
 
 
-	torrent.File.setState(StoppedState)
-	torrent.File.saveTorrent()
-	torrent.PeerSwarm.killSwarm()
+		for _,req := range currentPiece.pendingRequest{
+			req.status = nonStartedRequest
+			currentPiece.neededSubPiece  = append(currentPiece.neededSubPiece,req)
+		}
 
-	fmt.Printf("len of neededSUb :%v\n",len(currentPiece.neededSubPiece))
+		currentPiece.pendingRequest = make([]*PieceRequest,0)
+		torrent.File.saveTorrent()
+
+		torrent.PeerSwarm.killSwarm()
+
+		fmt.Printf("len of neededSUb :%v\n", len(currentPiece.neededSubPiece))
+		torrent.File.PiecesMutex.Unlock()
+
 }
-
-
 
 func (torrent *Torrent) TitForTat() {
 
@@ -180,20 +207,22 @@ func (torrent *Torrent) SelectPiece() {
 //	Params :
 //	subPieceRequest *PieceRequest : contains the raw request msg
 func (torrent *Torrent) requestPiece(subPieceRequest *PieceRequest) error {
+	println("im not stuck! 1")
 	torrent.PeerSwarm.SortPeerByDownloadRate()
 	var err error
 
 	currentPiece := torrent.File.Pieces[torrent.File.CurrentPieceIndex]
 
 	peerIndex := 0
+	torrent.PeerSwarm.activeConnectionMutex.Lock()
 
 	isPeerFree := false
 	var peer *Peer
 
-	for !isPeerFree {
+	for !isPeerFree && peerIndex < torrent.PeerSwarm.PeerByDownloadRate.Size(){
 		fmt.Printf("looking for a suitable peer | # of available peer : %v\n", torrent.PeerSwarm.PeerByDownloadRate.Size())
 		//	fmt.Printf("\nchoking peer # %v\n",torrent.chokeCounter)
-		//	fmt.Printf("looking for a suitable peer | # of available peer active connection: %v\n", torrent.PeerSwarm.activeConnection.Size())
+		fmt.Printf("looking for a suitable peer | # of available peer active connection: %v\n", torrent.PeerSwarm.activeConnection.Size())
 		peerI, found := torrent.PeerSwarm.PeerByDownloadRate.Get(peerIndex)
 
 		if found && peerI != nil {
@@ -218,7 +247,7 @@ func (torrent *Torrent) requestPiece(subPieceRequest *PieceRequest) error {
 
 	if peer != nil {
 		subPieceRequest.msg.Peer = peer
-		torrent.requestQueue.Add(subPieceRequest.msg)
+		torrent.jobQueue.AddJob(subPieceRequest.msg)
 		peer.peerPendingRequestMutex.Lock()
 		peer.peerPendingRequest = append(peer.peerPendingRequest, subPieceRequest)
 		peer.peerPendingRequestMutex.Unlock()
@@ -234,6 +263,7 @@ func (torrent *Torrent) requestPiece(subPieceRequest *PieceRequest) error {
 	} else {
 		err = errors.New("request is not sent ")
 	}
+	torrent.PeerSwarm.activeConnectionMutex.Unlock()
 
 	return err
 }
@@ -241,37 +271,37 @@ func (torrent *Torrent) requestPiece(subPieceRequest *PieceRequest) error {
 //	Selects Pieces that need to be downloader
 //	When a piece is completely downloaded , a new one is selected
 func (torrent *Torrent) PieceRequestManager() {
+	println("im not stuck! 2")
+
 	torrent.File.timeS = time.Now()
 	for atomic.LoadInt32(torrent.File.Status) == StartedState {
-		println("PieceRequestManager")
+
+		torrent.File.PiecesMutex.Lock()
+		currentPiece := torrent.File.Pieces[torrent.File.CurrentPieceIndex]
+		torrent.File.SelectNewPiece = currentPiece.CurrentLen == currentPiece.Len
+
+
+		if !torrent.File.SelectNewPiece && len(currentPiece.neededSubPiece) == 0 && len(currentPiece.pendingRequest) == 0{
+			log.Printf("I messed up")
+			os.Exit(363)
+		}
 
 		if torrent.File.SelectNewPiece {
 			if torrent.File.PieceSelectionBehavior == "random" {
-				torrent.File.PiecesMutex.Lock()
 				torrent.File.CurrentPieceIndex++
-				torrent.File.PiecesMutex.Unlock()
 				fmt.Printf("switching piece # %v\n", torrent.File.CurrentPieceIndex)
 
 				torrent.File.SelectNewPiece = false
 				torrent.PieceCounter = 0
 
-			} else if torrent.File.PieceSelectionBehavior == "rarest" {
-				//torrent.File.sortPieces()
-				//rarestPieceIndex := torrent.File.SortedAvailability[torrent.File.nPiece-1]
-				//torrent.File.PiecesMutex.RLock()
-				//torrent.File.currentPiece = torrent.File.Pieces[rarestPieceIndex]
-				//torrent.File.PiecesMutex.RUnlock()
 			}
-		}
+		}else{
 
-		//	store the pieces that is being downloaded
-		torrent.File.PiecesMutex.Lock()
-		currentPiece := torrent.File.Pieces[torrent.File.CurrentPieceIndex]
-		torrent.File.PiecesMutex.Unlock()
+			fmt.Printf("not complete yet , currenLen %v , actual Len %v\n",currentPiece.CurrentLen,currentPiece.Len)
+		}
 
 		currentPiece.pendingRequestMutex.Lock()
 		nSubPieceRequest := len(currentPiece.pendingRequest)
-		currentPiece.pendingRequestMutex.Unlock()
 
 		//	the number of subPiece request shall not exceed maxRequest
 		//	new requests are sent if the previous request have been fulfilled
@@ -283,13 +313,12 @@ func (torrent *Torrent) PieceRequestManager() {
 			i := 0
 			randomSeed := rand.New(rand.NewSource(time.Now().UnixNano()))
 
-			fmt.Printf("n pending Request : %v  nReq: %v needed Subp : %v\n",len(currentPiece.pendingRequest),nReq,len(currentPiece.neededSubPiece))
+			//fmt.Printf("n pending Request : %v  nReq: %v needed Subp : %v\n",len(currentPiece.pendingRequest),nReq,len(currentPiece.neededSubPiece))
 
 			for i < nReq {
 				// 	subPieces request are randomly selected
 				randomN := randomSeed.Intn(len(currentPiece.neededSubPiece))
 
-				currentPiece.pendingRequestMutex.Lock()
 				req := currentPiece.neededSubPiece[randomN]
 
 				//fmt.Printf("sending request\n")
@@ -301,17 +330,17 @@ func (torrent *Torrent) PieceRequestManager() {
 					currentPiece.neededSubPiece[len(currentPiece.neededSubPiece)-1] = nil
 					currentPiece.neededSubPiece = currentPiece.neededSubPiece[:len(currentPiece.neededSubPiece)-1]
 				}else{
-					os.Exit(2223)
+
+					fmt.Printf("ERR : %v\n",err)
+					//os.Exit(99)
 				}
-				currentPiece.pendingRequestMutex.Unlock()
 				i++
-				fmt.Printf("sending new Request.....\n")
+				//	fmt.Printf("sending new Request.....\n")
 
 			}
-			fmt.Printf("sending new Request2.....\n")
+			//fmt.Printf("sending new Request2.....\n")
 
 		}
-		currentPiece.pendingRequestMutex.Lock()
 
 		// re-sends request that have been pending for a certain amounts of time
 		nPendingRequest := len(currentPiece.pendingRequest)
@@ -321,18 +350,134 @@ func (torrent *Torrent) PieceRequestManager() {
 
 			if time.Now().Sub(pendingRequest.timeStamp) >= maxWaitingTime {
 				//fmt.Printf("sending request\n")
-				go torrent.requestPiece(pendingRequest)
+				_ = torrent.requestPiece(pendingRequest)
 			}
 
-			fmt.Printf("Resending Request.....\n")
+			//fmt.Printf("Resending Request.....\n")
+
+		}
+		currentPiece.pendingRequestMutex.Unlock()
+
+		torrent.File.PiecesMutex.Unlock()
+
+		//	fmt.Printf("Resending Request 3.....\n")
+
+
+		time.Sleep(time.Millisecond * 25)
+	}
+
+}
+func (torrent *Torrent) PieceRequestManager2() {
+	if atomic.LoadInt32(torrent.File.Status) == StartedState {
+
+		torrent.File.PiecesMutex.Lock()
+		currentPiece := torrent.File.Pieces[torrent.File.CurrentPieceIndex]
+		torrent.File.SelectNewPiece = currentPiece.CurrentLen == currentPiece.Len
+
+
+		if !torrent.File.SelectNewPiece && len(currentPiece.neededSubPiece) == 0 && len(currentPiece.pendingRequest) == 0{
+			log.Printf("I messed up")
+			os.Exit(363)
+		}
+
+		if torrent.File.SelectNewPiece {
+			if torrent.File.PieceSelectionBehavior == "random" {
+				torrent.File.CurrentPieceIndex++
+				fmt.Printf("switching piece # %v\n", torrent.File.CurrentPieceIndex)
+
+				torrent.File.SelectNewPiece = false
+				torrent.PieceCounter = 0
+
+			}
+		}else{
+
+			fmt.Printf("not complete yet , currenLen %v , actual Len %v\n",currentPiece.CurrentLen,currentPiece.Len)
+		}
+
+		currentPiece.pendingRequestMutex.Lock()
+		nSubPieceRequest := len(currentPiece.pendingRequest)
+
+		//	the number of subPiece request shall not exceed maxRequest
+		//	new requests are sent if the previous request have been fulfilled
+		if nSubPieceRequest < maxRequest {
+			nReq := maxRequest - len(currentPiece.pendingRequest)
+
+			nReq = int(math.Min(float64(nReq), float64(len(currentPiece.neededSubPiece))))
+
+			i := 0
+			randomSeed := rand.New(rand.NewSource(time.Now().UnixNano()))
+
+			//fmt.Printf("n pending Request : %v  nReq: %v needed Subp : %v\n",len(currentPiece.pendingRequest),nReq,len(currentPiece.neededSubPiece))
+
+			for i < nReq {
+				// 	subPieces request are randomly selected
+				randomN := randomSeed.Intn(len(currentPiece.neededSubPiece))
+
+				req := currentPiece.neededSubPiece[randomN]
+
+				//fmt.Printf("sending request\n")
+				err := torrent.requestPiece(req)
+
+				// once a request is added to the job JobQueue, it is removed from the needed subPiece / prevents from being reselected
+				if err == nil {
+					currentPiece.neededSubPiece[randomN] = currentPiece.neededSubPiece[len(currentPiece.neededSubPiece)-1]
+					currentPiece.neededSubPiece[len(currentPiece.neededSubPiece)-1] = nil
+					currentPiece.neededSubPiece = currentPiece.neededSubPiece[:len(currentPiece.neededSubPiece)-1]
+				}else{
+
+					fmt.Printf("ERR : %v\n",err)
+					//os.Exit(99)
+				}
+				i++
+				//	fmt.Printf("sending new Request.....\n")
+
+			}
+			//fmt.Printf("sending new Request2.....\n")
 
 		}
 
-		fmt.Printf("Resending Request 3.....\n")
+		// re-sends request that have been pending for a certain amounts of time
+		nPendingRequest := len(currentPiece.pendingRequest)
 
+		for r := 0; r < nPendingRequest; r++ {
+			pendingRequest := currentPiece.pendingRequest[r]
+
+			if time.Now().Sub(pendingRequest.timeStamp) >= maxWaitingTime {
+				//fmt.Printf("sending request\n")
+				_ = torrent.requestPiece(pendingRequest)
+			}
+
+			//fmt.Printf("Resending Request.....\n")
+
+		}
 		currentPiece.pendingRequestMutex.Unlock()
 
-		time.Sleep(time.Millisecond * 25)
+		torrent.File.PiecesMutex.Unlock()
+
+		//	fmt.Printf("Resending Request 3.....\n")
+		}
+
+}
+
+func (torrent *Torrent) LifeCycle(){
+	for {
+		println("running......")
+		select{
+		case <- torrent.StartedState:
+			if atomic.LoadInt32(torrent.File.Status) != StartedState {
+				torrent.File.setState(StartedState)
+				torrent.PieceRequestManagerPeriodicFunc.run()
+				torrent.PieceRequestManagerPeriodicFunc.startFunc()
+			}
+		case <- torrent.StoppedState:
+			if atomic.LoadInt32(torrent.File.Status) == StartedState {
+				torrent.File.setState(StoppedState)
+				torrent.PieceRequestManagerPeriodicFunc.stopFunc()
+				//torrent.Pause()
+				fmt.Printf("paused")
+			}
+
+		}
 	}
 }
 
@@ -435,7 +580,7 @@ func (torrent *Torrent) msgRouter(msg *MSG) {
 
 }
 
-func (torrent *Torrent) Worker(queue *JobQueue.Queue, id int) {
+/*func (torrent *Torrent) Worker(queue *JobQueue.Queue, id int) {
 	for {
 		request := queue.Pop()
 		switch item := request.(type) {
@@ -445,6 +590,12 @@ func (torrent *Torrent) Worker(queue *JobQueue.Queue, id int) {
 			switch item.msgType {
 			case outgoingMsg:
 				torrent.PeerSwarm.peerMutex.Lock()
+				defer func() {
+					r := recover()
+					if recover() != nil{
+						println(r)
+					}
+				}()
 				if item.Peer != nil {
 					_, _ = item.Peer.connection.Write(item.rawMsg)
 				}
@@ -456,4 +607,91 @@ func (torrent *Torrent) Worker(queue *JobQueue.Queue, id int) {
 
 		}
 	}
+}
+*/
+func (torrent *Torrent)Worker(id int){
+
+	for request := range  torrent.jobQueue.JobQueue {
+		switch item := request.(type) {
+
+		case *MSG:
+
+			switch item.msgType {
+			case outgoingMsg:
+				torrent.PeerSwarm.peerMutex.Lock()
+				defer func() {
+					r := recover()
+					if recover() != nil{
+						println(r)
+					}
+				}()
+				if item.Peer != nil {
+					_, _ = item.Peer.connection.Write(item.rawMsg)
+				}
+				torrent.PeerSwarm.peerMutex.Unlock()
+
+			case incomingMsg:
+				torrent.msgRouter(item)
+			}
+
+		}
+	}
+}
+
+
+type periodicFuncExecutor  func()
+
+type periodicFunc struct {
+	executor periodicFuncExecutor
+	isRunning bool
+	stop chan bool
+	interval time.Duration
+	isStop bool
+	tick *time.Ticker
+	wg *sync.WaitGroup
+}
+
+func newPeriodicFunc(executor periodicFuncExecutor) *periodicFunc{
+	periodicFunc := new(periodicFunc)
+	periodicFunc.stop = make(chan bool)
+	periodicFunc.interval = time.Millisecond*25
+	periodicFunc.tick = time.NewTicker(periodicFunc.interval)
+	periodicFunc.executor = executor
+
+	return periodicFunc
+}
+
+func(periodicFunc *periodicFunc) run(){
+	if !periodicFunc.isRunning{
+
+		println("periodicFunc is running..........")
+		go func() {
+			for{
+				select {
+
+				case stop := <- periodicFunc.stop:
+					periodicFunc.isStop = stop
+					if !periodicFunc.isStop {
+						periodicFunc.executor()
+					}
+				case  <- periodicFunc.tick.C :
+					println("exec func ..............")
+					if !periodicFunc.isStop{
+						periodicFunc.executor()
+					}
+				}
+
+			}
+		}()
+	}
+	periodicFunc.isRunning = true
+
+}
+
+func (periodicFunc *periodicFunc) startFunc(){
+	periodicFunc.stop <- false
+}
+
+func (periodicFunc *periodicFunc) stopFunc(){
+	periodicFunc.stop <- true
 }

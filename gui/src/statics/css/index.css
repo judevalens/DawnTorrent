@@ -48,6 +48,17 @@
   background-color: #7D8597;
 }
 
+.progress{
+  position: relative;
+}
+
+.torrentProgressData{
+  position: absolute;
+  display: block;
+  width: 100%;
+  color: black;
+}
+
 /*
 .menuItem span {
   margin: 2%;

@@ -9,8 +9,8 @@ const (
 	StoppedState           = 1
 	CompletedState         = 2
 	SubPieceLen            = 16384
-	maxWaitingTime         = time.Millisecond*120
-	maxRequest             = 5
-	peerDownloadRatePeriod = time.Second*10
+	maxWaitingTime         = time.Millisecond*300
+	maxRequest             = 8
+	peerDownloadRatePeriod = time.Second*30
 )
 

@@ -13,6 +13,7 @@ export default class Ipc {
         const execFile = require('child_process')
         this.socket = new zm.Request();
         this.socket.connect("tcp://127.0.0.1:5555")
+        this.socket.receiveTimeout = 1000
         this.Queue = new Array<IpcMsg>()
         this.setIpcListener()
         this.execJob()
@@ -45,6 +46,9 @@ export default class Ipc {
                         console.log("answer " ,answer[0].toString() )
                         msg.replyEvent.reply("answer",answer[0].toString())
                         isBusy = false
+                    }).catch((reason) => {
+                        isBusy = false
+                        console.log("req failedddd!")
                     })
                     console.log("executing job.......")
                 }

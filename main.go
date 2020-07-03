@@ -1,6 +1,7 @@
 package main
 
 import (
+	"DawnTorrent/JobQueue"
 	"DawnTorrent/PeerProtocol"
 	"DawnTorrent/utils"
 	"encoding/hex"
@@ -9,8 +10,10 @@ import (
 	zmq "github.com/pebbe/zmq4"
 	"io/ioutil"
 	"log"
+	"math/rand"
 	"path/filepath"
 	"sync/atomic"
+	"time"
 
 	//"DawnTorrent/ipc"
 )
@@ -29,15 +32,42 @@ type DawnTorrentClient struct {
 }
 
 func main() {
+
 	done := make(chan bool)
-	 initClient()
+	initClient()
 
 	//c.addTorrent("/home/jude/GolandProjects/DawnTorrent/files/ubuntu-20.04-desktop-amd64.iso.torrent",PeerProtocol.InitTorrentFile_)
 	//c.torrents["1"].Start()
 //
-	<-done
 	println("non blocking")
 
+
+	/*
+	wp := JobQueue.NewWorkerPool(15)
+
+	wp.Start()
+
+
+	go jobsMaker(wp)
+	go jobsMaker(wp)
+
+
+	*/
+	<-done
+
+}
+
+func jobsMaker(worker *JobQueue.WorkerPool){
+	newSeed := rand.NewSource(time.Now().UnixNano())
+	random := rand.New(newSeed)
+	_ = random.Intn(3)
+
+	jobs  := 100
+	for j := 0; j < jobs; j++{
+		worker.AddJob(j)
+		fmt.Printf("added job : %v\n", j)
+		time.Sleep(time.Duration(time.Second.Seconds()*1000000000 * float64(1)))
+	}
 }
 
 func (dawnTorrentClient DawnTorrentClient) startZMQ(){
@@ -57,7 +87,7 @@ func (dawnTorrentClient DawnTorrentClient) startZMQ(){
 		msgJSON, _ := server.Recv(zmq.SNDMORE)
 		msg := new(IpcMsg)
 
-		fmt.Printf("%v\n",string(msgJSON))
+	//	fmt.Printf("%v\n",string(msgJSON))
 		errTorrentIPCData := json.Unmarshal([]byte(msgJSON),msg)
 
 		if errTorrentIPCData != nil{
@@ -65,9 +95,15 @@ func (dawnTorrentClient DawnTorrentClient) startZMQ(){
 		}
 
 		dawnTorrentClient.CommandRouter(msg)
-		res , _ := json.Marshal(msg)
-		_, _ = server.Send(string(res), zmq.DONTWAIT)
-		log.Println(msgJSON)
+		res , jsonErr := json.Marshal(msg)
+		if jsonErr != nil{
+			log.Fatal(jsonErr)
+		}
+		_, sendingError := server.Send(string(res), zmq.DONTWAIT)
+
+		if sendingError != nil{
+			log.Fatal(sendingError)
+		}
 
 	}
 
@@ -76,6 +112,7 @@ func (dawnTorrentClient *DawnTorrentClient) addTorrent(torrentIpcData *PeerProto
 	newTorrent := PeerProtocol.NewTorrent(torrentIpcData.Path, torrentIpcData.AddMode)
 	dawnTorrentClient.torrents[newTorrent.File.InfoHashHex] = newTorrent
 	dawnTorrentClient.CaptureDataForUI(newTorrent,torrentIpcData)
+	go newTorrent.LifeCycle()
 }
 func (dawnTorrentClient DawnTorrentClient) CaptureDataForUI(torrent *PeerProtocol.Torrent,torrentIpcData *PeerProtocol.TorrentIPCData) {
 	torrentIpcData.Len = torrent.File.FileLen
@@ -84,21 +121,32 @@ func (dawnTorrentClient DawnTorrentClient) CaptureDataForUI(torrent *PeerProtoco
 	torrentIpcData.CurrentLen = torrent.File.TotalDownloaded
 	torrentIpcData.FileInfos =  torrent.File.Files
 	torrentIpcData.InfoHash = hex.EncodeToString([]byte(torrent.File.InfoHash))
+	torrentIpcData.DownloadRate = 	torrent.File.DownloadRate
+
 }
 func (dawnTorrentClient *DawnTorrentClient) PauseTorrent (command *Command){
 	fmt.Printf("\npause Test infoHash : %v\n", command.TorrentIPCData.InfoHash)
 	fmt.Printf("torrent to pause \n %v\n",dawnTorrentClient.torrents[command.TorrentIPCData.InfoHash])
 	torrent  := dawnTorrentClient.torrents[command.TorrentIPCData.InfoHash]
 	fmt.Printf("torrent infoHash : %v\n",torrent.File.InfoHashHex)
-	torrent.Pause()
+	torrent.StoppedState <- PeerProtocol.StoppedState
 	command.TorrentIPCData.State = PeerProtocol.StoppedState
 	fmt.Printf("pause TEST DONE")
 
 }
 func (dawnTorrentClient *DawnTorrentClient) Resume (command *Command){
-	dawnTorrentClient.torrents[command.TorrentIPCData.InfoHash].ResumeFromPause()
+	println("resuming........")
+	dawnTorrentClient.torrents[command.TorrentIPCData.InfoHash].StartedState <- PeerProtocol.StartedState
 	command.TorrentIPCData.State = PeerProtocol.StartedState
 }
+
+func (dawnTorrentClient *DawnTorrentClient) GetProgress (command *Command){
+	command.TorrentIPCData.CurrentLen = dawnTorrentClient.torrents[command.TorrentIPCData.InfoHash].File.TotalDownloaded
+	command.TorrentIPCData.DownloadRate =  dawnTorrentClient.torrents[command.TorrentIPCData.InfoHash].File.DownloadRate
+	fmt.Printf("downloadRate : %v\n",command.TorrentIPCData.DownloadRate)
+}
+
+
 
 
 func initClient() *DawnTorrentClient {
@@ -147,7 +195,8 @@ func (dawnTorrentClient *DawnTorrentClient) CommandRouter (msg *IpcMsg){
 				dawnTorrentClient.PauseTorrent(c)
 			case ResumeTorrent:
 				 dawnTorrentClient.Resume(c)
-
+			case GetProgress:
+				dawnTorrentClient.GetProgress(c)
 			case CloseClient:
 
 			}

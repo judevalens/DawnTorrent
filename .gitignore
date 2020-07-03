@@ -5,3 +5,4 @@ DawnTorrent
 /gui/node_modules
 
 /.idea
+*.pdf
