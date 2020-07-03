@@ -8,7 +8,6 @@ import (
 	"math"
 	"math/rand"
 	"os"
-	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -40,6 +39,7 @@ type Torrent struct {
 
 
 	PieceRequestManagerPeriodicFunc  *periodicFunc
+	trackerRegularRequestPeriodicFunc *periodicFunc
 }
 
 func NewTorrent(torrentPath string, mode int) *Torrent {
@@ -52,6 +52,7 @@ func NewTorrent(torrentPath string, mode int) *Torrent {
 
 
 	torrent.PieceRequestManagerPeriodicFunc = newPeriodicFunc(torrent.PieceRequestManager2)
+	torrent.trackerRegularRequestPeriodicFunc = newPeriodicFunc(torrent.PeerSwarm.trackerRegularRequest)
 
 
 
@@ -77,9 +78,7 @@ func NewTorrent(torrentPath string, mode int) *Torrent {
 	torrent.jobQueue.Start()
 	return torrent
 }
-func (torrent *Torrent) ResumeFromPause() {
-		go torrent.PeerSwarm.trackerRegularRequest()
-}
+
 func (torrent *Torrent) Pause() {
 		fmt.Printf("\n file test %v\n", torrent.File.InfoHashHex)
 	torrent.File.PiecesMutex.Lock()
@@ -102,72 +101,6 @@ func (torrent *Torrent) Pause() {
 
 }
 
-func (torrent *Torrent) TitForTat() {
-
-	OUCounter := 0
-
-	for true {
-		torrent.PeerSwarm.peerMutex.Lock()
-		sort.Sort(torrent.PeerSwarm)
-		torrent.PeerSwarm.peerMutex.Unlock()
-
-		numUnchockedPeer := 0
-		i := 0
-		var peer *Peer
-		for numUnchockedPeer < 3 {
-			isPeerInterested := false
-			for !isPeerInterested && i < int(atomic.LoadInt32(torrent.PeerSwarm.nActiveConnection)) {
-				peer = nil
-				isPeerInterested = peer.interested
-				i++
-			}
-			torrent.PeerSwarm.peerMutex.RLock()
-
-			if peer != nil {
-				torrent.PeerSwarm.unChockedPeer[numUnchockedPeer].chocked = true
-				torrent.PeerSwarm.unChockedPeer[numUnchockedPeer] = peer
-				torrent.PeerSwarm.unChockedPeer[numUnchockedPeer].chocked = false
-			}
-			torrent.PeerSwarm.peerMutex.RUnlock()
-
-			i++
-			numUnchockedPeer++
-		}
-
-		if OUCounter%3 == 0 {
-			randomSeed := rand.New(rand.NewSource(time.Now().UnixNano()))
-			//before selecting a peer for optimistic unchoking
-			// we need to have a least one chocked interested peer
-
-			interestedPeerMapLen := len(torrent.PeerSwarm.interestedPeerMap)
-
-			if interestedPeerMapLen > 0 {
-				randN := randomSeed.Intn(len(torrent.PeerSwarm.interestedPeerMap))
-				r := 0
-				var randomPeer *Peer
-				for k := range torrent.PeerSwarm.interestedPeerMap {
-					randomPeer = torrent.PeerSwarm.interestedPeerMap[k]
-					if r > randN {
-						break
-					}
-					r++
-				}
-				if torrent.PeerSwarm.unChockedPeer[3] != nil {
-					torrent.PeerSwarm.unChockedPeer[3].updateState(true, true, torrent)
-				}
-				torrent.PeerSwarm.unChockedPeer[3] = randomPeer
-				torrent.PeerSwarm.unChockedPeer[3].chocked = false
-			}
-
-		}
-
-		OUCounter++
-
-		d, _ := time.ParseDuration("10s")
-		time.Sleep(d)
-	}
-
-}
 func (torrent *Torrent) SelectPiece() {
 	start := 0
 	torrent.File.timeS = time.Now()
@@ -367,7 +300,7 @@ func (torrent *Torrent) PieceRequestManager() {
 	}
 
 }
-func (torrent *Torrent) PieceRequestManager2() {
+func (torrent *Torrent) PieceRequestManager2(periodic *periodicFunc) {
 	if atomic.LoadInt32(torrent.File.Status) == StartedState {
 
 		torrent.File.PiecesMutex.Lock()
@@ -467,12 +400,15 @@ func (torrent *Torrent) LifeCycle(){
 			if atomic.LoadInt32(torrent.File.Status) != StartedState {
 				torrent.File.setState(StartedState)
 				torrent.PieceRequestManagerPeriodicFunc.run()
+				torrent.trackerRegularRequestPeriodicFunc.run()
 				torrent.PieceRequestManagerPeriodicFunc.startFunc()
+				torrent.trackerRegularRequestPeriodicFunc.startFunc()
 			}
 		case <- torrent.StoppedState:
 			if atomic.LoadInt32(torrent.File.Status) == StartedState {
 				torrent.File.setState(StoppedState)
 				torrent.PieceRequestManagerPeriodicFunc.stopFunc()
+				torrent.trackerRegularRequestPeriodicFunc.stopFunc()
 				//torrent.Pause()
 				fmt.Printf("paused")
 			}
@@ -639,13 +575,14 @@ func (torrent *Torrent)Worker(id int){
 }
 
 
-type periodicFuncExecutor  func()
+type periodicFuncExecutor  func(periodic *periodicFunc)
 
 type periodicFunc struct {
 	executor periodicFuncExecutor
 	isRunning bool
 	stop chan bool
 	interval time.Duration
+	lastExecTimeStamp time.Time
 	isStop bool
 	tick *time.Ticker
 	wg *sync.WaitGroup
@@ -672,12 +609,12 @@ func(periodicFunc *periodicFunc) run(){
 				case stop := <- periodicFunc.stop:
 					periodicFunc.isStop = stop
 					if !periodicFunc.isStop {
-						periodicFunc.executor()
+						periodicFunc.executor(periodicFunc)
 					}
 				case  <- periodicFunc.tick.C :
 					println("exec func ..............")
 					if !periodicFunc.isStop{
-						periodicFunc.executor()
+						periodicFunc.executor(periodicFunc)
 					}
 				}
 
