@@ -4,6 +4,7 @@ import (
 	"DawnTorrent/parser"
 	"DawnTorrent/utils"
 	"bufio"
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -17,8 +18,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
-
 	//"os"
 	"strconv"
 	"sync"
@@ -462,9 +461,6 @@ func (peerSwarm *PeerSwarm) trackerRegularRequest(periodic *periodicFunc){
 			log.Fatal("tracker PieceRequest failed")
 		}
 
-		if peerSwarm.trackerInterval == 0{
-			os.Exit(2222)
-		}
 		periodic.lastExecTimeStamp = time.Now()
 	}
 
@@ -684,22 +680,31 @@ func (peer *Peer) updateState(choked, interested bool, torrent *Torrent) {
 	}
 }
 func (peer *Peer) receive(connection *net.TCPConn, peerSwarm *PeerSwarm) error {
-	incomingMsg := make([]byte, 18000)
 	var readFromConnError error
 	i := 0
+	msgLenBuffer := make([]byte, 4)
+
 	for readFromConnError == nil {
 
-		_, readFromConnError = bufio.NewReader(connection).Read(incomingMsg)
+		var nByteRead int
+		nByteRead, readFromConnError = io.ReadFull(connection,msgLenBuffer)
+		msgLen :=	int(binary.BigEndian.Uint32(msgLenBuffer[0:4]))
+		incomingMsgBuffer := make([]byte, msgLen)
 
-		parsedMsg, parserMsgErr := ParseMsg(incomingMsg, peer)
+		nByteRead, readFromConnError = io.ReadFull(connection,incomingMsgBuffer)
+
+		parsedMsg, parserMsgErr := ParseMsg(bytes.Join([][]byte{msgLenBuffer,incomingMsgBuffer},[]byte{}), peer)
 
 		if parserMsgErr == nil {
 			// TODO will probably use a worker pool here !
 			//peerSwarm.DawnTorrent.requestQueue.addJob(parsedMsg)
 			if parsedMsg.MsgID == PieceMsg {
 				//peerSwarm.DawnTorrent.pieceQueue.Add(parsedMsg)
+				if nByteRead != parsedMsg.MsgLen && nByteRead > 13{
+					fmt.Printf("nByteRead bBytesRead %v, msgLen %v", nByteRead,parsedMsg.MsgLen)
+					//os.Exit(25)
+				}
 				peerSwarm.torrent.msgRouter(parsedMsg)
-
 			}else{
 				peerSwarm.torrent.jobQueue.AddJob(parsedMsg)
 
@@ -711,6 +716,7 @@ func (peer *Peer) receive(connection *net.TCPConn, peerSwarm *PeerSwarm) error {
 			}
 
 		}
+
 
 		i++
 		//println("---------------------------------------------")
@@ -727,6 +733,13 @@ func (peer *Peer) send(msg MSG) error {
 	return writeError
 }
 
+/*
+func(peerSwarm *PeerSwarm) msgAssembler(msg []byte,msgStatus,nReadBytes int)(*MSG,int,int){
+	if msgStatus == 0 {
+		msgLen := int(binary.BigEndian.Uint32(msg[0:4]))
+	}
+}
+*/
 
 func(peer *Peer) isPeerFree () bool{
 	numOfExpiredRequest := 0

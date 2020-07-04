@@ -74,6 +74,8 @@ func InitTorrentFile(torrent *Torrent, torrentPath string) *TorrentFile {
 	file.PieceSelectionBehavior = "random"
 	file.SelectNewPiece = true
 
+	fmt.Printf("\n file Len %v , pieceLen %v, subPieceLen %v, n SubPieces %v \n",file.FileLen,file.pieceLength,file.subPieceLen,file.nSubPiece)
+
 	go file.fileAssembler()
 	return file
 }
@@ -226,7 +228,7 @@ func initFile(file *TorrentFile, fileInfos []*fileInfo, fileTotalLength, left in
 	file.subPieceLen = int(math.Min(float64(file.pieceLength), float64(file.subPieceLen)))
 	file.nSubPiece = int(math.Ceil(float64(file.pieceLength) / float64(file.subPieceLen)))
 	file.nPiece = int(math.Ceil(float64(file.FileLen) / float64(file.pieceLength)))
-	fmt.Printf("nPieces %v", file.nPiece)
+	fmt.Printf("nPieces %v\n", file.nPiece)
 
 	file.Pieces = make([]*Piece, file.nPiece)
 	file.PieceAvailability = arraylist.New()
@@ -322,6 +324,31 @@ func GetInfoHash(dict *parser.Dict) (string, [20]byte) {
 
 	return string(infoHashSlice), infoHash
 
+}
+
+func (file *TorrentFile) isPieceValid(piece *Piece)bool{
+
+	validHash := file.piecesSha1Hash[piece.PieceIndex*20:(piece.PieceIndex*20)+20]
+
+	fmt.Printf("piece Index %v\n",piece.PieceIndex)
+
+	pieceHash := sha1.Sum(piece.Pieces)
+	pieceHashSlice := pieceHash[:]
+
+	fmt.Printf("\n pieceHash :\n")
+	fmt.Printf(" %v\n",string(pieceHashSlice))
+	fmt.Printf("\n# neededSubpiece : %v\n",len(piece.neededSubPiece))
+	fmt.Printf("\n# PieceCounter : %v\n",file.torrent.PieceCounter)
+	fmt.Printf("\n currentValidHash :\n")
+	fmt.Printf(" %v\n",validHash)
+	fmt.Printf("Piece are equal : %v\n", validHash == string(pieceHashSlice))
+
+
+	if !( validHash == string(pieceHashSlice)){
+		os.Exit(223)
+	}
+
+	return validHash == string(pieceHashSlice)
 }
 
 //	Creates a Piece object and initialize subPieceRequest for this piece
@@ -457,7 +484,9 @@ func (file *TorrentFile) AddSubPiece(msg *MSG, peer *Peer) error {
 				file.left -= msg.PieceLen
 				fmt.Printf("downloaded %v mb in %v \n", file.TotalDownloaded/1000000.0, time.Now().Sub(file.timeS))
 
-				//copy(currentPiece.Pieces[msg.BeginIndex:msg.BeginIndex+msg.PieceLen], msg.Piece)
+				copy(currentPiece.Pieces[msg.BeginIndex:msg.BeginIndex+msg.PieceLen], msg.Piece)
+
+				fmt.Printf("\nbegin Index : %v, end index : %v \n",msg.BeginIndex,msg.BeginIndex+msg.PieceLen)
 
 				// piece is complete add it to the file
 				isPieceComplete := currentPiece.Len == currentPiece.CurrentLen
@@ -541,8 +570,10 @@ func (file *TorrentFile) fileAssembler() error {
 			subPieceIndex := int(math.Ceil(float64(msg.BeginIndex / SubPieceLen)))
 			subPieceBitMaskIndex := int(math.Ceil(float64(subPieceIndex / 8)))
 			subPieceBitIndex := subPieceIndex % 8
+			file.torrent.PieceCounter++
 
 			if subPieceBitMaskIndex < len(currentPiece.subPieceMask) {
+
 				// when a peer send a requested piece , the pending request object is removed from the peer pending request list
 				msg.Peer.mutex.Lock()
 				nPendingRequest := len(msg.Peer.peerPendingRequest)
@@ -582,19 +613,26 @@ func (file *TorrentFile) fileAssembler() error {
 					currentPiece.pendingRequestMutex.Unlock()
 
 					///fmt.Printf("Piece COunter %v\n",file.torrent.PieceCounter)
-					file.torrent.PieceCounter++
 					currentPiece.CurrentLen += len(msg.Piece)
 					file.TotalDownloaded += msg.PieceLen
 					file.left -= msg.PieceLen
-					fmt.Printf("downloaded %v mb in %v \n", file.TotalDownloaded/1000000.0, time.Now().Sub(file.timeS))
+					///fmt.Printf("downloaded %v mb in %v \n", file.TotalDownloaded/1000000.0, time.Now().Sub(file.timeS))
 
-					//copy(currentPiece.Pieces[msg.BeginIndex:msg.BeginIndex+msg.PieceLen], msg.Piece)
+					ncopied := copy(currentPiece.Pieces[msg.BeginIndex:msg.BeginIndex+msg.PieceLen], msg.Piece)
+
+					if ncopied != 16384 {
+						os.Exit(23)
+					}
+					fmt.Printf("n copied is : %v\n", ncopied)
+					fmt.Printf("begin Index : %v, end index : %v \n",msg.BeginIndex,msg.BeginIndex+msg.PieceLen)
 
 					// piece is complete add it to the file
 					isPieceComplete := currentPiece.Len == currentPiece.CurrentLen
 
 					// once a piece is complete we write the it to file
 					if isPieceComplete {
+						fmt.Printf(" currentPiece.Len %v, currentPiece.CurrentLen %v\n",currentPiece.Len,currentPiece.CurrentLen)
+						file.isPieceValid(currentPiece)
 						delete(file.NeededPiece, currentPiece.PieceIndex)
 						currentPiece.State = CompletePiece
 						//file.SelectNewPiece = true

@@ -75,10 +75,10 @@ func NewTorrent(torrentPath string, mode int) *Torrent {
 }
 
 func (torrent *Torrent) Pause() {
-		fmt.Printf("\n file test %v\n", torrent.File.InfoHashHex)
+	//	fmt.Printf("\n file test %v\n", torrent.File.InfoHashHex)
 	torrent.File.PiecesMutex.Lock()
 		currentPiece := torrent.File.Pieces[torrent.File.CurrentPieceIndex]
-		fmt.Printf("before len of neededSUb :%v\n", len(currentPiece.neededSubPiece))
+	//	fmt.Printf("before len of neededSUb :%v\n", len(currentPiece.neededSubPiece))
 
 
 		for _,req := range currentPiece.pendingRequest{
@@ -91,7 +91,7 @@ func (torrent *Torrent) Pause() {
 
 		torrent.PeerSwarm.killSwarm()
 
-		fmt.Printf("len of neededSUb :%v\n", len(currentPiece.neededSubPiece))
+	//	fmt.Printf("len of neededSUb :%v\n", len(currentPiece.neededSubPiece))
 		torrent.File.PiecesMutex.Unlock()
 
 }
@@ -111,7 +111,7 @@ func (torrent *Torrent) SelectPiece() {
 				torrent.File.PiecesMutex.Lock()
 				torrent.File.CurrentPieceIndex = start
 				torrent.File.PiecesMutex.Unlock()
-				fmt.Printf("switching piece # %v\n", torrent.File.CurrentPieceIndex)
+				//fmt.Printf("switching piece # %v\n", torrent.File.CurrentPieceIndex)
 				start++
 
 				torrent.File.SelectNewPiece = false
@@ -136,7 +136,7 @@ func (torrent *Torrent) SelectPiece() {
 //	subPieceRequest *PieceRequest : contains the raw request msg
 func (torrent *Torrent) requestPiece(subPieceRequest *PieceRequest) error {
 
-	println("im not stuck! 1")
+	//println("im not stuck! 1")
 	torrent.PeerSwarm.SortPeerByDownloadRate()
 	var err error
 
@@ -203,7 +203,7 @@ func (torrent *Torrent) requestPiece(subPieceRequest *PieceRequest) error {
 //	Selects Pieces that need to be downloader
 //	When a piece is completely downloaded , a new one is selected
 func (torrent *Torrent) PieceRequestManager() {
-	println("im not stuck! 2")
+	//println("im not stuck! 2")
 
 	torrent.File.timeS = time.Now()
 	for atomic.LoadInt32(torrent.File.Status) == StartedState {
@@ -220,7 +220,7 @@ func (torrent *Torrent) PieceRequestManager() {
 		if torrent.File.SelectNewPiece {
 			if torrent.File.PieceSelectionBehavior == "random" {
 				torrent.File.CurrentPieceIndex++
-				fmt.Printf("switching piece # %v\n", torrent.File.CurrentPieceIndex)
+				//fmt.Printf("switching piece # %v\n", torrent.File.CurrentPieceIndex)
 
 				torrent.File.SelectNewPiece = false
 				torrent.PieceCounter = 0
@@ -313,7 +313,7 @@ func (torrent *Torrent) PieceRequestManager2(periodic *periodicFunc) {
 		if torrent.File.SelectNewPiece {
 			if torrent.File.PieceSelectionBehavior == "random" {
 				torrent.File.CurrentPieceIndex++
-				fmt.Printf("switching piece # %v\n", torrent.File.CurrentPieceIndex)
+				//fmt.Printf("switching piece # %v\n", torrent.File.CurrentPieceIndex)
 
 				torrent.File.SelectNewPiece = false
 				torrent.PieceCounter = 0
@@ -321,7 +321,7 @@ func (torrent *Torrent) PieceRequestManager2(periodic *periodicFunc) {
 			}
 		}else{
 
-			fmt.Printf("not complete yet , currenLen %v , actual Len %v\n",currentPiece.CurrentLen,currentPiece.Len)
+			//fmt.Printf("not complete yet , currenLen %v , actual Len %v\n",currentPiece.CurrentLen,currentPiece.Len)
 		}
 
 		currentPiece.pendingRequestMutex.Lock()
@@ -497,7 +497,6 @@ func (torrent *Torrent) msgRouter(msg *MSG) {
 			// verifies that the length of the data is not greater or smaller than amount requested
 			if msg.PieceLen == torrent.File.subPieceLen || msg.PieceLen == torrent.File.Pieces[msg.PieceIndex].Len%torrent.File.subPieceLen {
 			//	_ = torrent.File.AddSubPiece(msg, msg.Peer)
-
 				torrent.File.addPieceChannel <- msg
 			}
 		}
@@ -612,7 +611,7 @@ func(periodicFunc *periodicFunc) run(){
 						periodicFunc.executor(periodicFunc)
 					}
 				case  <- periodicFunc.tick.C :
-					println("exec func ..............")
+					//println("exec func ..............")
 					if !periodicFunc.isStop{
 						periodicFunc.executor(periodicFunc)
 					}

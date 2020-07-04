@@ -57,6 +57,7 @@ var (
 type MSG struct {
 	MsgID          int
 	MsgLen         int
+	MsgPrefixLen int
 	field          map[string][]byte
 	PieceIndex     int
 	BeginIndex     int
@@ -155,13 +156,17 @@ func ParseMsg(msg []byte, peer *Peer) (*MSG, error) {
 
 	var err error
 
-	msgStruct.MsgLen = int(binary.BigEndian.Uint32(msg[0:4]))
+	if len(msg) >= 5{
+
+	msgStruct.MsgLen =  int(binary.BigEndian.Uint32(msg[0:4]))
 	id, _ := binary.Uvarint(msg[4:5])
 
 	msgStruct.MsgID = int(id)
 
 	msgStruct.priority = JobQueue.HighPriority
-
+	}else{
+		return nil, errors.New("msg is too short")
+	}
 	//fmt.Printf("MsgLen %v %v MsgID %v \n", msgStruct.MsgLen, binary.BigEndian.Uint32(msg[0:4]), msgStruct.MsgID)
 
 	if msgStruct.MsgLen <= len(msg) {
@@ -316,4 +321,12 @@ func intToByte(n int, nByte int) []byte {
 
 	return b
 
+}
+
+func isInBound(msg []byte,start,end int)error {
+	if start < len(msg) || end > len(msg) {
+		return errors.New("index is outOfBound")
+	}
+
+	return nil
 }

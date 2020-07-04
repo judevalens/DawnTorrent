@@ -5,7 +5,6 @@ import * as myIP from "ip"
 import {ipcMain, IpcMainEvent} from "electron";
 import IpcMsg from "./ipcMsg";
 import ipcMsg from "./ipcMsg";
-
 export default class Ipc {
     socket : zm.Request
     Queue : Array<object>
