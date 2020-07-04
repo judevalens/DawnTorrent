@@ -56,7 +56,6 @@ var Ipc = /** @class */ (function () {
         var execFile = require('child_process');
         this.socket = new zm.Request();
         this.socket.connect("tcp://127.0.0.1:5555");
-        this.socket.receiveTimeout = 1000;
         this.Queue = new Array();
         this.setIpcListener();
         this.execJob();

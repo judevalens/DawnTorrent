@@ -313,10 +313,10 @@ export class App {
                     torrent.selected = true
 
                     if (i % 2 == 0){
-                    this.startTorrentButton?.click()
+                  //  this.startTorrentButton?.click()
 
                     }else{
-                      this.pauseTorrentButton?.click()
+                      //this.pauseTorrentButton?.click()
                     }
                     i++
                     console.log(i)

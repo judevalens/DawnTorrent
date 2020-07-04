@@ -53,6 +53,7 @@ type TorrentFile struct {
 	tempDownloadCounter        int
 	DownloadRate               float64
 	downloadRateTimeStamp      time.Time
+	addPieceChannel				chan *MSG
 }
 
 type fileInfo struct {

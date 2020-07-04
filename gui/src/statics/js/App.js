@@ -249,7 +249,6 @@ var App = /** @class */ (function () {
         var y = 0;
         console.log("helP!!!!!!!");
         setInterval(function () {
-            var _a, _b;
             var key;
             console.log("requesting update ......");
             for (key in _this.torrents) {
@@ -264,18 +263,6 @@ var App = /** @class */ (function () {
                     var torrentInfoHash = torrent.TorrentIPCData.InfoHash;
                     electron_1.ipcRenderer.send('addMsgFromToQueue', _this.getMsgForTorrent(Command.GetProgress, torrentInfoHash, undefined));
                     // @ts-ignore
-                }
-                if (y != 0) {
-                    // @ts-ignore
-                    torrent.selected = true;
-                    if (i % 2 == 0) {
-                        (_a = _this.startTorrentButton) === null || _a === void 0 ? void 0 : _a.click();
-                    }
-                    else {
-                        (_b = _this.pauseTorrentButton) === null || _b === void 0 ? void 0 : _b.click();
-                    }
-                    i++;
-                    console.log(i);
                 }
             }
         }, 200);

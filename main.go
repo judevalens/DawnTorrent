@@ -41,7 +41,6 @@ func main() {
 //
 	println("non blocking")
 
-
 	/*
 	wp := JobQueue.NewWorkerPool(15)
 
@@ -195,6 +194,7 @@ func (dawnTorrentClient *DawnTorrentClient) CommandRouter (msg *IpcMsg){
 				dawnTorrentClient.PauseTorrent(c)
 			case ResumeTorrent:
 				 dawnTorrentClient.Resume(c)
+
 			case GetProgress:
 				dawnTorrentClient.GetProgress(c)
 			case CloseClient:

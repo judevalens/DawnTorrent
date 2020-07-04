@@ -31,6 +31,7 @@ const (
 	RemovePeer             = 1
 	AddActivePeer          = 4
 	SortPeerByDownloadRate = 3
+	RemovePendingRequest	= 5
 	isPeerFree             = 2
 )
 
@@ -54,6 +55,7 @@ type PeerSwarm struct {
 	torrent *Torrent
 	trackerInterval	int
 	peerOperation  chan *peerOperation
+	lastSelectedPeer int
 
 }
 
@@ -73,8 +75,8 @@ func NewPeerSwarm(torrent *Torrent) *PeerSwarm {
 	newPeerSwarm.nActiveConnection = new(int32)
 	atomic.AddInt32(newPeerSwarm.nActiveConnection, 0)
 	newPeerSwarm.torrent = torrent
-	newPeerSwarm.peerOperation  = make(chan *peerOperation, 5)
-
+	newPeerSwarm.peerOperation  = make(chan *peerOperation)
+	go newPeerSwarm.peersManager()
 	
 	return newPeerSwarm
 }
@@ -421,7 +423,7 @@ var trackerErr error
 
 func (peerSwarm *PeerSwarm) trackerRegularRequest(periodic *periodicFunc){
 
-	if atomic.LoadInt32(peerSwarm.torrent.File.Status) == StartedState && time.Now().Sub(periodic.lastExecTimeStamp).Seconds() > float64(peerSwarm.trackerInterval){
+	if atomic.LoadInt32(peerSwarm.torrent.File.Status) == StartedState && (time.Now().Sub(periodic.lastExecTimeStamp).Seconds() > float64(peerSwarm.trackerInterval) || periodic.lastExecTimeStamp.Second() == 0){
 
 		var peersFromTracker *parser.Dict
 		var trackerErr error
@@ -442,7 +444,7 @@ func (peerSwarm *PeerSwarm) trackerRegularRequest(periodic *periodicFunc){
 			}
 		}
 
-		fmt.Printf("%v interval", peerSwarm.trackerInterval)
+		fmt.Printf("current %v interval", peerSwarm.trackerInterval)
 
 
 		if trackerErr == nil {
@@ -463,8 +465,6 @@ func (peerSwarm *PeerSwarm) trackerRegularRequest(periodic *periodicFunc){
 		if peerSwarm.trackerInterval == 0{
 			os.Exit(2222)
 		}
-
-
 		periodic.lastExecTimeStamp = time.Now()
 	}
 
@@ -507,6 +507,28 @@ func (peerSwarm *PeerSwarm) peersManager(){
 			peerSwarm.SortPeerByDownloadRate()
 		case AddActivePeer:
 			peerSwarm.addActivePeer(pO.peer)
+		case isPeerFree:
+			var availablePeer *Peer
+
+			for i := 0; i <  peerSwarm.PeerByDownloadRate.Size(); i++ {
+				peerI, found := peerSwarm.PeerByDownloadRate.Get(i)
+
+				if found {
+					peer := peerI.(*Peer)
+					if peer != nil {
+
+						if peer.isPeerFree(){
+							availablePeer = peer
+							break
+						}
+
+					}
+				}else{
+					break
+				}
+			}
+
+			pO.freePeerChannel <- availablePeer
 
 
 		}
@@ -520,7 +542,7 @@ func (peerSwarm *PeerSwarm) trackerRequestEvent(){
 func (peerSwarm *PeerSwarm) NewPeer(dict *parser.Dict) *Peer {
 	newPeer := new(Peer)
 	newPeer.peerPendingRequest = make([]*PieceRequest,0)
-	newPeer.peerPendingRequestMutex = new(sync.RWMutex)
+	newPeer.mutex = new(sync.RWMutex)
 	newPeer.id = dict.MapString["peer id"]
 	newPeer.port = dict.MapString["port"]
 	newPeer.ip = dict.MapString["ip"]
@@ -560,6 +582,16 @@ func (peerSwarm *PeerSwarm) NewPeerFromString(peer []byte) (string, string, stri
 
 	return ipString, strconv.FormatUint(uint64(portBytes), 10), ipString + ":" + newPeer.port
 }
+func (peerSwarm *PeerSwarm) NewPeer2(peerIp, peerPort, peerID string) *Peer {
+	peerDict := new(parser.Dict)
+	peerDict.MapString = make(map[string]string)
+	peerDict.MapString["ip"] = peerIp
+	peerDict.MapString["port"] = peerPort
+	peerDict.MapString["peer id"] = peerID
+	newPeer := peerSwarm.NewPeer(peerDict)
+	return newPeer
+
+}
 func (peerSwarm *PeerSwarm) DropConnection(peer *Peer) {
 	peer.connection = nil
 	peerSwarm.activeConnection.Remove(peer.id)
@@ -576,17 +608,9 @@ func (peerSwarm *PeerSwarm) DropConnection(peer *Peer) {
 		}
 
 	}
-	peer = nil
 
-}
-func (peerSwarm *PeerSwarm) NewPeer2(peerIp, peerPort, peerID string) *Peer {
-	peerDict := new(parser.Dict)
-	peerDict.MapString = make(map[string]string)
-	peerDict.MapString["ip"] = peerIp
-	peerDict.MapString["port"] = peerPort
-	peerDict.MapString["peer id"] = peerID
-	newPeer := peerSwarm.NewPeer(peerDict)
-	return newPeer
+	//peer = nil
+
 
 }
 
@@ -602,7 +626,6 @@ func (peerSwarm *PeerSwarm) addActivePeer(peer *Peer)  {
 	peerSwarm.PeerByDownloadRate.Add(peer)
 }
 
-
 func (peerSwarm *PeerSwarm) PeerByDownloadRateComparator (a,b interface{}) int{
 	pieceA := a.(*Peer)
 	pieceB	:= b.(*Peer)
@@ -616,34 +639,33 @@ func (peerSwarm *PeerSwarm) PeerByDownloadRateComparator (a,b interface{}) int{
 		return 0
 	}
 }
-
 func (peerSwarm *PeerSwarm) SortPeerByDownloadRate(){
 	if time.Now().Sub(peerSwarm.PeerByDownloadRateTimeStamp) >= peerDownloadRatePeriod{
 		peerSwarm.PeerByDownloadRate.Sort(peerSwarm.PeerByDownloadRateComparator)
 		peerSwarm.PeerByDownloadRateTimeStamp = time.Now()
 	}
 }
+
 type Peer struct {
 	ip                string
 	port              string
 	id                string
 	peerIndex         int
-	peerIsChocking    bool
-	peerIsInteresting bool
-	chocked           bool
-	interested        bool
-	AvailablePieces   []bool
-	numByteDownloaded int
-	time              time.Time
-	lastTimeStamp     time.Time
-	DownloadRate      float64
-	connection        *net.TCPConn
-	peerPendingRequestMutex *sync.RWMutex
-	peerPendingRequest	[]*PieceRequest
+	peerIsChocking                  bool
+	peerIsInteresting               bool
+	chocked                         bool
+	interested                      bool
+	AvailablePieces                 []bool
+	numByteDownloaded               int
+	time                            time.Time
+	lastTimeStamp                   time.Time
+	DownloadRate                    float64
+	connection                      *net.TCPConn
+	mutex                           *sync.RWMutex
+	peerPendingRequest              []*PieceRequest
 	lastPeerPendingRequestTimeStamp time.Time
-	isFree	bool
+	isFree                          bool
 }
-
 func (peer *Peer) updateState(choked, interested bool, torrent *Torrent) {
 
 	peer.chocked = choked
@@ -661,7 +683,6 @@ func (peer *Peer) updateState(choked, interested bool, torrent *Torrent) {
 		}
 	}
 }
-
 func (peer *Peer) receive(connection *net.TCPConn, peerSwarm *PeerSwarm) error {
 	incomingMsg := make([]byte, 18000)
 	var readFromConnError error
@@ -709,12 +730,12 @@ func (peer *Peer) send(msg MSG) error {
 
 func(peer *Peer) isPeerFree () bool{
 	numOfExpiredRequest := 0
-	peer.peerPendingRequestMutex.Lock()
+	peer.mutex.Lock()
 	nPendingRequest := len(peer.peerPendingRequest)
 
 	if peer.peerIsChocking {
 	//	println("peer is choking")
-		peer.peerPendingRequestMutex.Unlock()
+		peer.mutex.Unlock()
 	peer.isFree = false
 	return peer.isFree
 	}
@@ -743,11 +764,13 @@ func(peer *Peer) isPeerFree () bool{
 		}
 	}
 
-	peer.peerPendingRequestMutex.Unlock()
+	peer.mutex.Unlock()
 	return peer.isFree
 }
 
 type peerOperation struct {
 	operation int
 	peer *Peer
+	// used to get an available peer
+	freePeerChannel chan *Peer
 }

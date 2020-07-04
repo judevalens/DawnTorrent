@@ -7,7 +7,6 @@ import (
 	"log"
 	"math"
 	"math/rand"
-	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -51,11 +50,6 @@ func NewTorrent(torrentPath string, mode int) *Torrent {
 	torrent.lifeCycleWG  = new(sync.WaitGroup)
 
 
-	torrent.PieceRequestManagerPeriodicFunc = newPeriodicFunc(torrent.PieceRequestManager2)
-	torrent.trackerRegularRequestPeriodicFunc = newPeriodicFunc(torrent.PeerSwarm.trackerRegularRequest)
-
-
-
 
 	fmt.Printf("mode %v",mode)
 	if mode == InitTorrentFile_ {
@@ -72,7 +66,8 @@ func NewTorrent(torrentPath string, mode int) *Torrent {
 	//torrent.requestQueue.Run(1)
 	//torrent.incomingMsgQueue.Run(1)
 	//torrent.pieceQueue.Run(1)
-
+	torrent.PieceRequestManagerPeriodicFunc = newPeriodicFunc(torrent.PieceRequestManager2)
+	torrent.trackerRegularRequestPeriodicFunc = newPeriodicFunc(torrent.PeerSwarm.trackerRegularRequest)
 	torrent.jobQueue = JobQueue.NewWorkerPool(torrent,15)
 
 	torrent.jobQueue.Start()
@@ -140,17 +135,20 @@ func (torrent *Torrent) SelectPiece() {
 //	Params :
 //	subPieceRequest *PieceRequest : contains the raw request msg
 func (torrent *Torrent) requestPiece(subPieceRequest *PieceRequest) error {
+
 	println("im not stuck! 1")
 	torrent.PeerSwarm.SortPeerByDownloadRate()
 	var err error
 
+	peerOperation := new(peerOperation)
+	peerOperation.operation = isPeerFree
+	peerOperation.freePeerChannel = make(chan *Peer)
 	currentPiece := torrent.File.Pieces[torrent.File.CurrentPieceIndex]
-
+	var peer *Peer
+	/*
 	peerIndex := 0
-	torrent.PeerSwarm.activeConnectionMutex.Lock()
 
 	isPeerFree := false
-	var peer *Peer
 
 	for !isPeerFree && peerIndex < torrent.PeerSwarm.PeerByDownloadRate.Size(){
 		fmt.Printf("looking for a suitable peer | # of available peer : %v\n", torrent.PeerSwarm.PeerByDownloadRate.Size())
@@ -160,7 +158,6 @@ func (torrent *Torrent) requestPiece(subPieceRequest *PieceRequest) error {
 
 		if found && peerI != nil {
 			peer = peerI.(*Peer)
-			peerIndex++
 			peerIndex = peerIndex % torrent.PeerSwarm.PeerByDownloadRate.Size()
 
 			if peer != nil {
@@ -173,17 +170,20 @@ func (torrent *Torrent) requestPiece(subPieceRequest *PieceRequest) error {
 				isPeerFree = false
 			}
 		} else {
-			//fmt.Printf("peer is not found\n")
 		}
 
 	}
+	*/
+	torrent.PeerSwarm.peerOperation <- peerOperation
+	peer = <- peerOperation.freePeerChannel
+
 
 	if peer != nil {
 		subPieceRequest.msg.Peer = peer
 		torrent.jobQueue.AddJob(subPieceRequest.msg)
-		peer.peerPendingRequestMutex.Lock()
+		peer.mutex.Lock()
 		peer.peerPendingRequest = append(peer.peerPendingRequest, subPieceRequest)
-		peer.peerPendingRequestMutex.Unlock()
+		peer.mutex.Unlock()
 
 		subPieceRequest.timeStamp = time.Now()
 
@@ -196,7 +196,6 @@ func (torrent *Torrent) requestPiece(subPieceRequest *PieceRequest) error {
 	} else {
 		err = errors.New("request is not sent ")
 	}
-	torrent.PeerSwarm.activeConnectionMutex.Unlock()
 
 	return err
 }
@@ -216,7 +215,6 @@ func (torrent *Torrent) PieceRequestManager() {
 
 		if !torrent.File.SelectNewPiece && len(currentPiece.neededSubPiece) == 0 && len(currentPiece.pendingRequest) == 0{
 			log.Printf("I messed up")
-			os.Exit(363)
 		}
 
 		if torrent.File.SelectNewPiece {
@@ -310,7 +308,6 @@ func (torrent *Torrent) PieceRequestManager2(periodic *periodicFunc) {
 
 		if !torrent.File.SelectNewPiece && len(currentPiece.neededSubPiece) == 0 && len(currentPiece.pendingRequest) == 0{
 			log.Printf("I messed up")
-			os.Exit(363)
 		}
 
 		if torrent.File.SelectNewPiece {
@@ -499,7 +496,9 @@ func (torrent *Torrent) msgRouter(msg *MSG) {
 		if msg.PieceIndex < torrent.File.nPiece {
 			// verifies that the length of the data is not greater or smaller than amount requested
 			if msg.PieceLen == torrent.File.subPieceLen || msg.PieceLen == torrent.File.Pieces[msg.PieceIndex].Len%torrent.File.subPieceLen {
-				_ = torrent.File.AddSubPiece(msg, msg.Peer)
+			//	_ = torrent.File.AddSubPiece(msg, msg.Peer)
+
+				torrent.File.addPieceChannel <- msg
 			}
 		}
 
@@ -594,6 +593,7 @@ func newPeriodicFunc(executor periodicFuncExecutor) *periodicFunc{
 	periodicFunc.interval = time.Millisecond*25
 	periodicFunc.tick = time.NewTicker(periodicFunc.interval)
 	periodicFunc.executor = executor
+	periodicFunc.lastExecTimeStamp = time.Now()
 
 	return periodicFunc
 }
