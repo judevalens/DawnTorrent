@@ -4,7 +4,6 @@ import (
 	"DawnTorrent/JobQueue"
 	"DawnTorrent/PeerProtocol"
 	"DawnTorrent/utils"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	zmq "github.com/pebbe/zmq4"
@@ -109,25 +108,29 @@ func (dawnTorrentClient DawnTorrentClient) startZMQ(){
 }
 func (dawnTorrentClient *DawnTorrentClient) addTorrent(torrentIpcData *PeerProtocol.TorrentIPCData){
 	newTorrent := PeerProtocol.NewTorrent(torrentIpcData.Path, torrentIpcData.AddMode)
-	dawnTorrentClient.torrents[newTorrent.File.InfoHashHex] = newTorrent
+	dawnTorrentClient.torrents[newTorrent.Downloader.InfoHashHex] = newTorrent
 	dawnTorrentClient.CaptureDataForUI(newTorrent,torrentIpcData)
 	go newTorrent.LifeCycle()
 }
 func (dawnTorrentClient DawnTorrentClient) CaptureDataForUI(torrent *PeerProtocol.Torrent,torrentIpcData *PeerProtocol.TorrentIPCData) {
-	torrentIpcData.Len = torrent.File.FileLen
-	torrentIpcData.Name = torrent.File.Name
-	torrentIpcData.State = int(atomic.LoadInt32(torrent.File.Status))
-	torrentIpcData.CurrentLen = torrent.File.TotalDownloaded
-	torrentIpcData.FileInfos =  torrent.File.Files
-	torrentIpcData.InfoHash = hex.EncodeToString([]byte(torrent.File.InfoHash))
-	torrentIpcData.DownloadRate = 	torrent.File.DownloadRate
+	torrentIpcData.Len = torrent.Downloader.FileLength
+	torrentIpcData.Name = torrent.Downloader.Name
+	torrentIpcData.State = int(atomic.LoadInt32(torrent.Downloader.State))
+	torrentIpcData.CurrentLen = torrent.Downloader.TotalDownloaded
+	torrentIpcData.FileInfos =  torrent.Downloader.FileProperties
+	torrentIpcData.InfoHash = torrent.Downloader.InfoHash
+	torrentIpcData.InfoHashHex = torrent.Downloader.InfoHashHex
+	println("my infoHash HEx")
+	println(torrentIpcData.InfoHashHex)
+	println(torrent.Downloader.InfoHash)
+	torrentIpcData.DownloadRate = 	torrent.Downloader.DownloadRate
 
 }
 func (dawnTorrentClient *DawnTorrentClient) PauseTorrent (command *Command){
-	fmt.Printf("\npause Test infoHash : %v\n", command.TorrentIPCData.InfoHash)
-	fmt.Printf("torrent to pause \n %v\n",dawnTorrentClient.torrents[command.TorrentIPCData.InfoHash])
-	torrent  := dawnTorrentClient.torrents[command.TorrentIPCData.InfoHash]
-	fmt.Printf("torrent infoHash : %v\n",torrent.File.InfoHashHex)
+	fmt.Printf("\npause Test infoHash : %v\n", command.TorrentIPCData.InfoHashHex)
+	fmt.Printf("torrent to pause \n %v\n",dawnTorrentClient.torrents[command.TorrentIPCData.InfoHashHex])
+	torrent  := dawnTorrentClient.torrents[command.TorrentIPCData.InfoHashHex]
+	fmt.Printf("torrent infoHash : %v\n",torrent.Downloader.InfoHashHex)
 	torrent.StoppedState <- PeerProtocol.StoppedState
 	command.TorrentIPCData.State = PeerProtocol.StoppedState
 	fmt.Printf("pause TEST DONE")
@@ -135,14 +138,15 @@ func (dawnTorrentClient *DawnTorrentClient) PauseTorrent (command *Command){
 }
 func (dawnTorrentClient *DawnTorrentClient) Resume (command *Command){
 	println("resuming........")
-	dawnTorrentClient.torrents[command.TorrentIPCData.InfoHash].StartedState <- PeerProtocol.StartedState
+	dawnTorrentClient.torrents[command.TorrentIPCData.InfoHashHex].StartedState <- PeerProtocol.StartedState
 	command.TorrentIPCData.State = PeerProtocol.StartedState
 }
 
 func (dawnTorrentClient *DawnTorrentClient) GetProgress (command *Command){
-	command.TorrentIPCData.CurrentLen = dawnTorrentClient.torrents[command.TorrentIPCData.InfoHash].File.TotalDownloaded
-	command.TorrentIPCData.DownloadRate =  dawnTorrentClient.torrents[command.TorrentIPCData.InfoHash].File.DownloadRate
-	fmt.Printf("downloadRate : %v\n",command.TorrentIPCData.DownloadRate)
+	fmt.Printf("\nInfoHashHex : %v\n",command.TorrentIPCData.InfoHashHex)
+
+	command.TorrentIPCData.CurrentLen = dawnTorrentClient.torrents[command.TorrentIPCData.InfoHashHex].Downloader.TotalDownloaded
+	command.TorrentIPCData.DownloadRate =  dawnTorrentClient.torrents[command.TorrentIPCData.InfoHashHex].Downloader.DownloadRate
 }
 
 
@@ -162,11 +166,13 @@ func initClient() *DawnTorrentClient {
 		for _ , f := range  savedTorrent {
 			fmt.Printf("child %v \n",f.Name())
 			if filepath.Ext(f.Name()) == ".json" {
-				path := utils.GetPath(utils.TorrentDataPath,utils.GetFileName(f.Name()))
+				path := utils.GetPath(utils.TorrentDataPath,utils.GetFileName(f.Name()),f.Name())
 				torrent := PeerProtocol.NewTorrent(path,PeerProtocol.ResumeTorrentFile_)
-				fmt.Printf("infohash %v\n",torrent.File.InfoHash)
-				dawnTorrentClient.torrents[torrent.File.InfoHash] = torrent
-
+				fmt.Printf("\ninfohash %v\n",torrent.Downloader.InfoHashHex)
+				torrent.Downloader.SetState(PeerProtocol.StoppedState)
+				dawnTorrentClient.torrents[torrent.Downloader.InfoHashHex] = torrent
+				fmt.Printf("torrent state %v, n neededPiece %v\n", torrent.Downloader.State, torrent.Downloader.Pieces[0].State)
+				go torrent.LifeCycle()
 				break
 			}
 

@@ -22,9 +22,11 @@ const PORT = 6881
 const PORT2 = 6881
 const UpFlag = "up"
 
+// path types
 const (
 	PieceHashPath   = 0
 	TorrentDataPath = 1
+	DownloadedFile  = 2
 )
 
 var LocalAddr, _ = net.ResolveTCPAddr("tcp", LocalAddress().String()+":"+strconv.Itoa(PORT2))
@@ -38,10 +40,6 @@ var homeDir, _ = os.UserHomeDir()
 var TorrentHomeDir = filepath.FromSlash(homeDir + "/DawnTorrent/files")
 
 var SavedTorrentDir = filepath.FromSlash(homeDir + "/DawnTorrent/torrents")
-
-
-
-
 
 func GetRandomId() string {
 	PeerIDLength := 20
@@ -111,6 +109,9 @@ func LocalAddress() net.IP {
 	return net.IP{}
 }
 
+// Mask a bit at given position
+//
+// 1 turns bit on | 0 turns bit off
 func BitMask(b uint8, bits []int, action int) uint8 {
 
 	if action == 1 {
@@ -141,29 +142,40 @@ func flipBit(b uint8) uint8 {
 	return a
 }
 
-func GetPath(pathType int, path string) string {
+func GetPath(pathType int, path string, fileName string) string {
 	var path2 string
-	pathRoot := filepath.FromSlash(SavedTorrentDir + "/" + path)
-
+	var pathRoot string
 	switch pathType {
 	case PieceHashPath:
+		pathRoot = filepath.FromSlash(SavedTorrentDir + "/" + path)
+
 		if _, err := os.Stat(pathRoot); os.IsNotExist(err) {
 			_ = os.MkdirAll(pathRoot, os.ModePerm)
 
 		}
-		path2 = filepath.FromSlash(SavedTorrentDir + "/" + path + "/piecesHash.sha1")
+		path2 = filepath.FromSlash(SavedTorrentDir + "/" + path + "/" + fileName)
 	case TorrentDataPath:
+		pathRoot = filepath.FromSlash(SavedTorrentDir + "/" + path)
+
 		if _, err := os.Stat(pathRoot); os.IsNotExist(err) {
 			_ = os.MkdirAll(pathRoot, os.ModePerm)
 
 		}
-		path2 =filepath.FromSlash(SavedTorrentDir + "/" + path + "/" + path + ".json")
-	}
+		path2 = filepath.FromSlash(SavedTorrentDir + "/" + path + "/" + fileName)
+	case DownloadedFile:
+		pathRoot = filepath.FromSlash(TorrentHomeDir + "/" + path)
 
+		if _, err := os.Stat(pathRoot); os.IsNotExist(err) {
+			_ = os.MkdirAll(pathRoot, os.ModePerm)
+
+		}
+		path2 = filepath.FromSlash(TorrentHomeDir + "/" + path + "/" + fileName)
+
+	}
 	return path2
 }
 
-func GetFileName(path string) string{
+func GetFileName(path string) string {
 	extensionLen := len(filepath.Ext(path))
 	fileNameLen := len(path)
 

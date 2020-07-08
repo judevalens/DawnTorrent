@@ -7,13 +7,12 @@ import (
 )
 func TestnewFileInfo(t *testing.T){
 	//fileInfosSize := 1
-	//fileInfos := make([]*fileInfo,fileInfosSize)
+	//fileInfos := make([]*fileProperty,fileInfosSize)
 }
 
 func TestInitTorrentFile(t *testing.T) {
-
 	torrent := new(Torrent)
-	testTorrentFileSingleFile := InitTorrentFile(torrent,"/home/jude/GolandProjects/DawnTorrent/files/ubuntu-20.04-desktop-amd64.iso.torrent")
+	testTorrentFileSingleFile := initDownloader(torrent,"/home/jude/GolandProjects/DawnTorrent/files/ubuntu-20.04-desktop-amd64.iso.torrent")
 	t.Run("test metadata 1 [single file]", func(t *testing.T) {
 		announceTestValue := "https://torrent.ubuntu.com/announce"
 		fileNameTestValue := "ubuntu-20.04-desktop-amd64.iso"
@@ -32,8 +31,8 @@ func TestInitTorrentFile(t *testing.T) {
 		t.Errorf("infoHash is incorrect: got -> %v, want -> %v", strings.ToLower(infoHashHex), infoHashHexTestValue)
 	}
 
-	if testTorrentFileSingleFile.FileLen != fileLenTest {
-		t.Errorf("file Len is incorrect: got -> %v, want -> %v", testTorrentFileSingleFile.FileLen, fileLenTest)
+	if testTorrentFileSingleFile.FileLength != fileLenTest {
+		t.Errorf("file Len is incorrect: got -> %v, want -> %v", testTorrentFileSingleFile.FileLength, fileLenTest)
 	}
 
 		if testTorrentFileSingleFile.pieceLength != filePieceLenTest {
@@ -49,23 +48,23 @@ func TestInitTorrentFile(t *testing.T) {
 		fileLengthTest := 2715254784
 		fileIndexTest := 0
 
-		if testTorrentFileSingleFile.Files[0].Path!= filePathTest {
-			t.Errorf("file path is incorrect : got -> %v, want -> %v", testTorrentFileSingleFile.Files[0].Path,filePathTest)
+		if testTorrentFileSingleFile.FileProperties[0].Path!= filePathTest {
+			t.Errorf("file path is incorrect : got -> %v, want -> %v", testTorrentFileSingleFile.FileProperties[0].Path,filePathTest)
 		}
-		if testTorrentFileSingleFile.Files[0].StartIndex != fileStartIndexTest {
-			t.Errorf("start App is incorrect : got -> %v, want -> %v", testTorrentFileSingleFile.Files[0].StartIndex,fileStartIndexTest)
-		}
-
-		if testTorrentFileSingleFile.Files[0].EndIndex != fileEndIndexTest {
-			t.Errorf("End App is incorrect : got -> %v, want -> %v", testTorrentFileSingleFile.Files[0].StartIndex,fileEndIndexTest)
+		if testTorrentFileSingleFile.FileProperties[0].StartIndex != fileStartIndexTest {
+			t.Errorf("start App is incorrect : got -> %v, want -> %v", testTorrentFileSingleFile.FileProperties[0].StartIndex,fileStartIndexTest)
 		}
 
-		if testTorrentFileSingleFile.Files[0].Length != fileLengthTest {
-			t.Errorf("file Len is incorrect : got -> %v, want -> %v", testTorrentFileSingleFile.Files[0].StartIndex, fileLengthTest)
+		if testTorrentFileSingleFile.FileProperties[0].EndIndex != fileEndIndexTest {
+			t.Errorf("End App is incorrect : got -> %v, want -> %v", testTorrentFileSingleFile.FileProperties[0].StartIndex,fileEndIndexTest)
 		}
 
-		if testTorrentFileSingleFile.Files[0].FileIndex != fileIndexTest {
-			t.Errorf("file App is incorrect : got -> %v, want -> %v", testTorrentFileSingleFile.Files[0].StartIndex,fileIndexTest)
+		if testTorrentFileSingleFile.FileProperties[0].Length != fileLengthTest {
+			t.Errorf("file Len is incorrect : got -> %v, want -> %v", testTorrentFileSingleFile.FileProperties[0].StartIndex, fileLengthTest)
+		}
+
+		if testTorrentFileSingleFile.FileProperties[0].FileIndex != fileIndexTest {
+			t.Errorf("file App is incorrect : got -> %v, want -> %v", testTorrentFileSingleFile.FileProperties[0].StartIndex,fileIndexTest)
 		}
 
 	})

@@ -12,5 +12,9 @@ const (
 	maxWaitingTime         = time.Millisecond*300
 	maxRequest             = 8
 	peerDownloadRatePeriod = time.Second*30
+	sequentialSelection    = 0
+	randomSelection = 1
+	prioritySelection = 2
+
 )
 

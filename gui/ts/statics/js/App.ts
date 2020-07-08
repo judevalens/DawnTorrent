@@ -49,14 +49,14 @@ export class App {
 
     }
 
-    getMsgForTorrent( command: number, infoHash?: string,path?:string,addMode?:number): object {
+    getMsgForTorrent( command: number, infoHashHex?: string,path?:string,addMode?:number): object {
 
         return {
             CommandType : command,
             Commands: [{
                 Command: command,
                 TorrentIPCData: {
-                    InfoHash: infoHash,
+                    InfoHashHex: infoHashHex,
                     Path : path,
                     AddMode : addMode
                 }
@@ -115,7 +115,7 @@ export class App {
                 // @ts-ignore
                 if (torrent.selected){
                     // @ts-ignore
-                    const torrentInfoHash : string =   torrent.TorrentIPCData.InfoHash
+                    const torrentInfoHash : string =   torrent.TorrentIPCData.InfoHashHex
                     ipcRenderer.send('addMsgFromToQueue', this.getMsgForTorrent(Command.ResumeTorrent,torrentInfoHash,undefined))
 
                 }
@@ -131,7 +131,7 @@ export class App {
                 // @ts-ignore
                 if (torrent.selected){
                     // @ts-ignore
-                    const torrentInfoHash : string =   torrent.TorrentIPCData.InfoHash
+                    const torrentInfoHash : string =   torrent.TorrentIPCData.InfoHashHex
                     ipcRenderer.send('addMsgFromToQueue', this.getMsgForTorrent(Command.PauseTorrent,torrentInfoHash,undefined))
 
                 }
@@ -155,12 +155,12 @@ export class App {
     addTorrent2(command: object) {
         // @ts-ignore
 
-        this.torrents[command.TorrentIPCData.InfoHash] = command
+        this.torrents[command.TorrentIPCData.InfoHashHex] = command
         // @ts-ignore
-        this.torrents[command.TorrentIPCData.InfoHash].selected = false
+        this.torrents[command.TorrentIPCData.InfoHashHex].selected = false
         let torrentBlock = document.createElement("div");
         // @ts-ignore
-        torrentBlock.setAttribute("id",command.TorrentIPCData.InfoHash)
+        torrentBlock.setAttribute("id",command.TorrentIPCData.InfoHashHex)
         torrentBlock.classList.add("row")
         let torrentName = document.createElement("span")
         torrentName.classList.add("col-md-2")
@@ -175,7 +175,7 @@ export class App {
 
         let playPause = document.createElement("span")
         // @ts-ignore
-        playPause.setAttribute("infoHash", command.TorrentIPCData.InfoHash)
+        playPause.setAttribute("infoHash", command.TorrentIPCData.InfoHashHex)
         playPause.classList.add("playResume","col-md-2");
         // @ts-ignore
         playPause.setAttribute("torrentStatus", command.TorrentIPCData.State)
@@ -238,11 +238,11 @@ export class App {
         let that : App= this
         // @ts-ignore
 
-        this.torrents[command.TorrentIPCData.InfoHash] = command
+        this.torrents[command.TorrentIPCData.InfoHashHex] = command
         // @ts-ignore
-        let infoHash : string = command.TorrentIPCData.InfoHash
+        let infoHash : string = command.TorrentIPCData.InfoHashHex
         // @ts-ignore
-        this.torrents[command.TorrentIPCData.InfoHash].selected = false
+        this.torrents[command.TorrentIPCData.InfoHashHex].selected = false
         // @ts-ignore
         let torrentBlock : HTMLElement  = document.getElementById("torrentBlockData").cloneNode(true);
         torrentBlock.classList.remove("hidden")
@@ -262,11 +262,7 @@ export class App {
             torrentState.textContent = "paused"
         }
 
-
-
-
         // @ts-ignore
-
 
         this.torrentContainer?.appendChild(torrentBlock)
 
@@ -304,13 +300,13 @@ export class App {
                 if (torrent.TorrentIPCData.State == TorrentState.startedState){
                     y = -1
                     // @ts-ignore
-                    const torrentInfoHash : string =   torrent.TorrentIPCData.InfoHash
+                    const torrentInfoHash : string =   torrent.TorrentIPCData.InfoHashHex
                     ipcRenderer.send('addMsgFromToQueue', this.getMsgForTorrent(Command.GetProgress,torrentInfoHash,undefined))
                     // @ts-ignore
                 }
                 if (y != 0){
                     // @ts-ignore
-                    torrent.selected = true
+                    //torrent.selected = true
 
                     if (i % 2 == 0){
                   //  this.startTorrentButton?.click()
@@ -328,9 +324,10 @@ export class App {
 
     updateTorrent(command: Command) {
         // @ts-ignore
-        const playResumeButton: HTMLElement | null = document.getElementById(command.TorrentIPCData.InfoHash).getElementsByClassName("playResume")[0]
+        const playResumeButton: HTMLElement | null = document.getElementById(command.TorrentIPCData.InfoHashHex
+        ).getElementsByClassName("playResume")[0]
         // @ts-ignore
-        const currentTorrent : Element = document.getElementById(command.TorrentIPCData.InfoHash)
+        const currentTorrent : Element = document.getElementById(command.TorrentIPCData.InfoHashHex)
 
         // @ts-ignore
         switch (command.Command) {
@@ -340,7 +337,7 @@ export class App {
                 let torrentState : Element = currentTorrent.getElementsByClassName("torrentStatus")[0]
 
                 // @ts-ignore
-                this.torrents[command.TorrentIPCData.InfoHash].TorrentIPCData.State = command.TorrentIPCData.State
+                this.torrents[command.TorrentIPCData.InfoHashHex].TorrentIPCData.State = command.TorrentIPCData.State
                 console.log("State changed to")
                 // @ts-ignore
                 console.log(this.torrents)
@@ -352,7 +349,7 @@ export class App {
                 // @ts-ignore
                 let torrentState : Element = currentTorrent.getElementsByClassName("torrentStatus")[0]
                 // @ts-ignore
-                this.torrents[command.TorrentIPCData.InfoHash].TorrentIPCData.State = command.TorrentIPCData.State
+                this.torrents[command.TorrentIPCData.InfoHashHex].TorrentIPCData.State = command.TorrentIPCData.State
                 console.log("State changed to")
                 // @ts-ignore
                 console.log(this.torrents)
@@ -363,13 +360,13 @@ export class App {
                 // @ts-ignore
                 const currentLen :number = command.TorrentIPCData.CurrentLen
                 // @ts-ignore
-                const totalLen : number = this.torrents[command.TorrentIPCData.InfoHash].TorrentIPCData.Len
+                const totalLen : number = this.torrents[command.TorrentIPCData.InfoHashHex].TorrentIPCData.Len
 
                 // @ts-ignore
                 const currentDownloadSpeed : number = command.TorrentIPCData.DownloadRate
 
                 // @ts-ignore
-                this.torrents[command.TorrentIPCData.InfoHash].TorrentIPCData.CurrentLen = currentLen
+                this.torrents[command.TorrentIPCData.InfoHashHex].TorrentIPCData.CurrentLen = currentLen
                 console.log("progress update ........")
                 let torrentProgressBar : Element =  currentTorrent.getElementsByClassName("torrentProgressBar")[0]
                 let torrentProgressData : Element = torrentProgressBar.getElementsByClassName("torrentProgressData")[0]
@@ -438,6 +435,5 @@ export class App {
         if (i == 0) return bytes + ' ' + sizes[i];
         return (bytes / Math.pow(1024, i)).toFixed(1) + ' ' + sizes[i];
     }
-
 
 }

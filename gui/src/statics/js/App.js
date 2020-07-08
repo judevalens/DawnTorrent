@@ -40,13 +40,13 @@ var App = /** @class */ (function () {
         electron_1.ipcRenderer.send('addMsgFromToQueue', this.getMsgForClient(Command.InitClient));
         this.getProgress();
     }
-    App.prototype.getMsgForTorrent = function (command, infoHash, path, addMode) {
+    App.prototype.getMsgForTorrent = function (command, infoHashHex, path, addMode) {
         return {
             CommandType: command,
             Commands: [{
                     Command: command,
                     TorrentIPCData: {
-                        InfoHash: infoHash,
+                        InfoHashHex: infoHashHex,
                         Path: path,
                         AddMode: addMode
                     }
@@ -100,7 +100,7 @@ var App = /** @class */ (function () {
                 // @ts-ignore
                 if (torrent.selected) {
                     // @ts-ignore
-                    var torrentInfoHash = torrent.TorrentIPCData.InfoHash;
+                    var torrentInfoHash = torrent.TorrentIPCData.InfoHashHex;
                     electron_1.ipcRenderer.send('addMsgFromToQueue', _this.getMsgForTorrent(Command.ResumeTorrent, torrentInfoHash, undefined));
                 }
             }
@@ -113,7 +113,7 @@ var App = /** @class */ (function () {
                 // @ts-ignore
                 if (torrent.selected) {
                     // @ts-ignore
-                    var torrentInfoHash = torrent.TorrentIPCData.InfoHash;
+                    var torrentInfoHash = torrent.TorrentIPCData.InfoHashHex;
                     electron_1.ipcRenderer.send('addMsgFromToQueue', _this.getMsgForTorrent(Command.PauseTorrent, torrentInfoHash, undefined));
                 }
             }
@@ -133,12 +133,12 @@ var App = /** @class */ (function () {
         // @ts-ignore
         var _this = this;
         var _a;
-        this.torrents[command.TorrentIPCData.InfoHash] = command;
+        this.torrents[command.TorrentIPCData.InfoHashHex] = command;
         // @ts-ignore
-        this.torrents[command.TorrentIPCData.InfoHash].selected = false;
+        this.torrents[command.TorrentIPCData.InfoHashHex].selected = false;
         var torrentBlock = document.createElement("div");
         // @ts-ignore
-        torrentBlock.setAttribute("id", command.TorrentIPCData.InfoHash);
+        torrentBlock.setAttribute("id", command.TorrentIPCData.InfoHashHex);
         torrentBlock.classList.add("row");
         var torrentName = document.createElement("span");
         torrentName.classList.add("col-md-2");
@@ -150,7 +150,7 @@ var App = /** @class */ (function () {
         torrentStatus.classList.add("col-md-2");
         var playPause = document.createElement("span");
         // @ts-ignore
-        playPause.setAttribute("infoHash", command.TorrentIPCData.InfoHash);
+        playPause.setAttribute("infoHash", command.TorrentIPCData.InfoHashHex);
         playPause.classList.add("playResume", "col-md-2");
         // @ts-ignore
         playPause.setAttribute("torrentStatus", command.TorrentIPCData.State);
@@ -205,11 +205,11 @@ var App = /** @class */ (function () {
         var _a;
         var that = this;
         // @ts-ignore
-        this.torrents[command.TorrentIPCData.InfoHash] = command;
+        this.torrents[command.TorrentIPCData.InfoHashHex] = command;
         // @ts-ignore
-        var infoHash = command.TorrentIPCData.InfoHash;
+        var infoHash = command.TorrentIPCData.InfoHashHex;
         // @ts-ignore
-        this.torrents[command.TorrentIPCData.InfoHash].selected = false;
+        this.torrents[command.TorrentIPCData.InfoHashHex].selected = false;
         // @ts-ignore
         var torrentBlock = document.getElementById("torrentBlockData").cloneNode(true);
         torrentBlock.classList.remove("hidden");
@@ -260,25 +260,37 @@ var App = /** @class */ (function () {
                 if (torrent.TorrentIPCData.State == TorrentState.startedState) {
                     y = -1;
                     // @ts-ignore
-                    var torrentInfoHash = torrent.TorrentIPCData.InfoHash;
+                    var torrentInfoHash = torrent.TorrentIPCData.InfoHashHex;
                     electron_1.ipcRenderer.send('addMsgFromToQueue', _this.getMsgForTorrent(Command.GetProgress, torrentInfoHash, undefined));
                     // @ts-ignore
+                }
+                if (y != 0) {
+                    // @ts-ignore
+                    //torrent.selected = true
+                    if (i % 2 == 0) {
+                        //  this.startTorrentButton?.click()
+                    }
+                    else {
+                        //this.pauseTorrentButton?.click()
+                    }
+                    i++;
+                    console.log(i);
                 }
             }
         }, 200);
     };
     App.prototype.updateTorrent = function (command) {
         // @ts-ignore
-        var playResumeButton = document.getElementById(command.TorrentIPCData.InfoHash).getElementsByClassName("playResume")[0];
+        var playResumeButton = document.getElementById(command.TorrentIPCData.InfoHashHex).getElementsByClassName("playResume")[0];
         // @ts-ignore
-        var currentTorrent = document.getElementById(command.TorrentIPCData.InfoHash);
+        var currentTorrent = document.getElementById(command.TorrentIPCData.InfoHashHex);
         // @ts-ignore
         switch (command.Command) {
             case Command.PauseTorrent:
                 // @ts-ignore
                 var torrentState = currentTorrent.getElementsByClassName("torrentStatus")[0];
                 // @ts-ignore
-                this.torrents[command.TorrentIPCData.InfoHash].TorrentIPCData.State = command.TorrentIPCData.State;
+                this.torrents[command.TorrentIPCData.InfoHashHex].TorrentIPCData.State = command.TorrentIPCData.State;
                 console.log("State changed to");
                 // @ts-ignore
                 console.log(this.torrents);
@@ -289,7 +301,7 @@ var App = /** @class */ (function () {
                 // @ts-ignore
                 var torrentState = currentTorrent.getElementsByClassName("torrentStatus")[0];
                 // @ts-ignore
-                this.torrents[command.TorrentIPCData.InfoHash].TorrentIPCData.State = command.TorrentIPCData.State;
+                this.torrents[command.TorrentIPCData.InfoHashHex].TorrentIPCData.State = command.TorrentIPCData.State;
                 console.log("State changed to");
                 // @ts-ignore
                 console.log(this.torrents);
@@ -300,11 +312,11 @@ var App = /** @class */ (function () {
                 // @ts-ignore
                 var currentLen = command.TorrentIPCData.CurrentLen;
                 // @ts-ignore
-                var totalLen = this.torrents[command.TorrentIPCData.InfoHash].TorrentIPCData.Len;
+                var totalLen = this.torrents[command.TorrentIPCData.InfoHashHex].TorrentIPCData.Len;
                 // @ts-ignore
                 var currentDownloadSpeed = command.TorrentIPCData.DownloadRate;
                 // @ts-ignore
-                this.torrents[command.TorrentIPCData.InfoHash].TorrentIPCData.CurrentLen = currentLen;
+                this.torrents[command.TorrentIPCData.InfoHashHex].TorrentIPCData.CurrentLen = currentLen;
                 console.log("progress update ........");
                 var torrentProgressBar = currentTorrent.getElementsByClassName("torrentProgressBar")[0];
                 var torrentProgressData = torrentProgressBar.getElementsByClassName("torrentProgressData")[0];

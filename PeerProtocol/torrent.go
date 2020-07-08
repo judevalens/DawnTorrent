@@ -8,36 +8,36 @@ import (
 
 const (
 	EmptyPiece      = 0
-	CompletePiece   = 0
-	InProgressPiece = 0
+	CompletePiece   = 2
+	InProgressPiece = 3
 )
 
-type TorrentFile struct {
+type TorrentDownloader struct {
 	Announce       string
 	AnnounceList   []string
 	Comment        string
 	CreatedBy      string
-	CreationDate   string
-	Encoding       string
-	piecesSha1Hash string
-	FileMode       int
-	filesMutex     sync.RWMutex
-	Files          []*fileInfo
-	PiecesMutex    sync.RWMutex
-	Pieces         []*Piece
-	nPiece         int
-	FileLen        int
-	subPieceLen    int
-	nSubPiece      int
-	InfoHash       string
-	infoHashByte   [20]byte
-	InfoHashHex 			string
-	pieceLength    int
-	Name           string
-	NeededPiece                map[int]*Piece
-	PieceHolder				[]*byte
-	currentPiece               *Piece
-	PieceSelectionBehavior     string
+	CreationDate       string
+	Encoding           string
+	piecesSha1Hash     string
+	FileMode           int
+	filesMutex         sync.RWMutex
+	FileProperties     []*fileProperty
+	PiecesMutex        sync.RWMutex
+	Pieces             []*Piece
+	nPiece             int
+	FileLength         int
+	subPieceLength     int
+	nSubPiece          int
+	InfoHash           string
+	infoHashByte       [20]byte
+	InfoHashHex        string
+	pieceLength        int
+	Name               string
+	PieceSorter        *PieceSorter
+	PieceHolder        []*byte
+	currentPiece       *Piece
+	PieceSelectionMode int
 	SelectNewPiece             bool
 	CurrentPieceIndex          int
 	torrent                    *Torrent
@@ -48,15 +48,17 @@ type TorrentFile struct {
 	pieceAvailabilityMutex     *sync.RWMutex
 	PieceAvailability          *arraylist.List
 	PieceAvailabilityTimeStamp time.Time
-	Status                     *int32
+	State                      *int32
 	downloadRateMutex          *sync.Mutex
 	tempDownloadCounter        int
 	DownloadRate               float64
 	downloadRateTimeStamp      time.Time
-	addPieceChannel				chan *MSG
+	addPieceChannel            chan *MSG
+	Bitfield                   []byte
+	PieceBuffer 				[]byte
 }
 
-type fileInfo struct {
+type fileProperty struct {
 	Path       string
 	Length     int
 	FileIndex  int
@@ -80,6 +82,7 @@ type Piece struct {
 	pendingRequestMutex *sync.RWMutex
 	pendingRequest      []*PieceRequest
 	neededSubPiece      []*PieceRequest
+	completedRequest	[]*PieceRequest
 	nSubPiece           int
 	AvailabilityIndex   int
 }
@@ -108,15 +111,16 @@ type pos struct {
 	writingIndex int
 }
 
-type SavedTorrentData struct {
+type SavedTorrentMetaData struct {
 	Announce               string
 	AnnounceList           []string
 	Comment                string
 	CreatedBy              string
 	CreationDate           string
 	Encoding               string
+	InfoHashByte               []int
 	InfoHash               string
-	InfoHashHex 			string
+	InfoHashHex            string
 	piecesHash             string
 	PiecesSha1             string
 	Left                   int
@@ -125,10 +129,34 @@ type SavedTorrentData struct {
 	SubPieceLen            int
 	nPiece                 int
 	Pieces                 []*Piece
-	FileInfos              []*fileInfo
+	FileProperties         []*fileProperty
+	Name                   string
+	State                  int
+
+}
+type SavedTorrentData struct {
+	Announce               string
+	AnnounceList           []string
+	Comment                string
+	CreatedBy              string
+	CreationDate           string
+	Encoding               string
+	InfoHashByte               []int
+	InfoHash               string
+	InfoHashHex            string
+	piecesHash             string
+	PiecesSha1             string
+	Left                   int
+	FileLen                int
+	PieceLength            int
+	SubPieceLen            int
+	nPiece                 int
+	Pieces                 []*Piece
+	FileProperties         []*fileProperty
 	Name                   string
 	State                  int
 	PieceSelectionBehavior int
+	Bitfield               []int
 }
 
 
@@ -136,13 +164,14 @@ type TorrentIPCData struct {
 	Name         string
 	Path         string
 	InfoHash     string
+	InfoHashHex		string
 	Len          int
 	CurrentLen   int
 	PiecesStatus []bool
 	State        int
 	Command      int
 	AddMode      int
-	FileInfos    []*fileInfo
+	FileInfos    []*fileProperty
 	DownloadRate				float64
 
 }
