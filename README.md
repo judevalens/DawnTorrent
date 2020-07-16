@@ -1,7 +1,6 @@
 # DawnTorrent
 
-DawnTorrent is a minimalistic bittorent client, that offers the essential functionalies for torrenting . ie can seeds and leechs torrents.
-
+DawnTorrent is a minimalistic BitTorrent client, that offers the essential functionalities for torrenting. ie downloading and uploading.
 # Key features :
   - torrent downloading
   - torrent uploading
