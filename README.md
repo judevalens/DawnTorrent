@@ -11,8 +11,8 @@ DawnTorrent is a minimalistic BitTorrent client, that offers the essential funct
   - can set a limit on the download and upload bandwidth
   
   ## Technologies  :
-    - GoLang (back-end)
-    - Javascript (TypeScript)
-    - HTML/CSS (ui)
-    - ElectronJs (ui)
-    - Zeromq (connects the back-end and the ui)
+   - GoLang (back-end)
+   - Javascript (TypeScript)
+   - HTML/CSS (ui)
+   - ElectronJs (ui)
+   - Zeromq (connects the back-end and the ui)
