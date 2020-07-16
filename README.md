@@ -1,8 +1,8 @@
 # DawnTorrent
-``````
-DawnTorrent is a minimalistic bittorent client.
 
-### Key features :
+DawnTorrent is a minimalistic bittorent client.  
+
+# Key features :
   - torrent downloading
   - torrent uploading
   - support simultaneous downloading
