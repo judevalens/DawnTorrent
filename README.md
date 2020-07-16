@@ -12,7 +12,8 @@ DawnTorrent is a minimalistic BitTorrent client, that offers the essential funct
   
   ## Technologies  :
    - GoLang (back-end)
-   - Javascript (TypeScript)
+   - TypeScript (ui)
    - HTML/CSS (ui)
    - ElectronJs (ui)
+   - NodeJs (ui)
    - Zeromq (connects the back-end and the ui)
