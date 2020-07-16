@@ -8,3 +8,4 @@ DawnTorrent is a minimalistic bittorent client.
   - support simultaneous downloading
   - simple ui
   - built in torrent browser
+  - automatic port forwading (UPnP needs to be enabled)
