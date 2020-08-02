@@ -73,9 +73,9 @@ export class App {
 
     setIpcListener() {
         // @ts-ignore
-        ipcRenderer.on("answer", (event, args) => {
+        ipcRenderer.on("answer", (event, msg) => {
             console.log("incoming response")
-            let msg = JSON.parse(args)
+
             console.log(msg)
             this.msgRouter(msg)
         })

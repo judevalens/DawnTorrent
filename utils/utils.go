@@ -27,6 +27,7 @@ const (
 	PieceHashPath   = 0
 	TorrentDataPath = 1
 	DownloadedFile  = 2
+	Ipc = 3
 )
 
 var LocalAddr, _ = net.ResolveTCPAddr("tcp", LocalAddress().String()+":"+strconv.Itoa(PORT2))
@@ -170,6 +171,13 @@ func GetPath(pathType int, path string, fileName string) string {
 
 		}
 		path2 = filepath.FromSlash(TorrentHomeDir + "/" + path + "/" + fileName)
+	case Ipc:
+		pathRoot = filepath.FromSlash(TorrentHomeDir + "/" + path)
+		if _, err := os.Stat(pathRoot); os.IsNotExist(err) {
+			_ = os.MkdirAll(pathRoot, os.ModePerm)
+
+		}
+		path2 = filepath.FromSlash(TorrentHomeDir + "/" + path )
 
 	}
 	return path2

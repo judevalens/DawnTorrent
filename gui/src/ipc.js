@@ -54,9 +54,13 @@ var ipcMsg_1 = __importDefault(require("./ipcMsg"));
 var Ipc = /** @class */ (function () {
     function Ipc() {
         var execFile = require('child_process');
-        this.socket = new zm.Request();
-        this.socket.connect("tcp://127.0.0.1:5555");
+        this.socket = new zm.Pair();
+        this.socket.connect("ipc:///home/jude/DawnTorrent/files/tmp/feeds/10/1");
+        console.log(this.socket.context);
+        console.log("this.socket.context");
         this.Queue = new Array();
+        this.replyEvent = {};
+        this.msgIdIndex = 0;
         this.setIpcListener();
         this.execJob();
         console.log(myIP.address());
@@ -71,31 +75,35 @@ var Ipc = /** @class */ (function () {
                 switch (_a.label) {
                     case 0:
                         console.log(msg);
+                        // @ts-ignore
+                        msg["MsgIndex"] = this.msgIdIndex++;
                         console.log(JSON.stringify(msg));
-                        return [4 /*yield*/, this.socket.send(JSON.stringify(msg))];
+                        // @ts-ignore
+                        this.replyEvent[msg["MsgIndex"]] = replyEvent;
+                        return [4 /*yield*/, this.socket.send(JSON.stringify(msg)).catch(function (reason) {
+                                console.log(reason);
+                            })];
                     case 1:
                         _a.sent();
-                        return [4 /*yield*/, this.socket.receive()];
-                    case 2: return [2 /*return*/, _a.sent()];
+                        return [2 /*return*/];
                 }
             });
         });
     };
-    Ipc.prototype.execJob = function () {
-        var _this = this;
-        var isBusy = false;
-        setInterval(function () { return __awaiter(_this, void 0, void 0, function () {
-            var msg_1;
+    Ipc.prototype.sendMsgFromQueue = function () {
+        return __awaiter(this, void 0, void 0, function () {
+            var isBusy, msg;
             return __generator(this, function (_a) {
                 switch (_a.label) {
                     case 0:
+                        isBusy = false;
                         if (!!isBusy) return [3 /*break*/, 2];
-                        msg_1 = this.Queue.pop();
-                        if (!(msg_1 !== undefined)) return [3 /*break*/, 2];
+                        msg = this.Queue.pop();
+                        if (!(msg !== undefined)) return [3 /*break*/, 2];
                         isBusy = true;
-                        return [4 /*yield*/, this.sendMsg(msg_1.msg, msg_1.replyEvent).then(function (answer) {
-                                console.log("answer ", answer[0].toString());
-                                msg_1.replyEvent.reply("answer", answer[0].toString());
+                        return [4 /*yield*/, this.sendMsg(msg.msg, msg.replyEvent).then(function (answer) {
+                                // console.log("answer " ,answer[0].toString() )
+                                // msg.replyEvent.reply("answer",answer[0].toString())
                                 isBusy = false;
                             }).catch(function (reason) {
                                 isBusy = false;
@@ -108,7 +116,45 @@ var Ipc = /** @class */ (function () {
                     case 2: return [2 /*return*/];
                 }
             });
-        }); }, 0.01);
+        });
+    };
+    Ipc.prototype.execJob = function () {
+        var _this = this;
+        var isReceiverBusy = false;
+        setInterval(function () { return __awaiter(_this, void 0, void 0, function () {
+            var e_1;
+            var _this = this;
+            return __generator(this, function (_a) {
+                switch (_a.label) {
+                    case 0: return [4 /*yield*/, this.sendMsgFromQueue()];
+                    case 1:
+                        _a.sent();
+                        if (!!isReceiverBusy) return [3 /*break*/, 5];
+                        isReceiverBusy = true;
+                        _a.label = 2;
+                    case 2:
+                        _a.trys.push([2, 4, , 5]);
+                        return [4 /*yield*/, this.socket.receive().then(function (incomingMsg) {
+                                console.log("answer", incomingMsg[0].toString());
+                                console.log(incomingMsg);
+                                var msg = JSON.parse(incomingMsg[0].toString());
+                                var msgIndex = msg["MsgIndex"];
+                                // @ts-ignore
+                                _this.replyEvent[msgIndex].reply("answer", msg);
+                                isReceiverBusy = false;
+                            })];
+                    case 3:
+                        _a.sent();
+                        return [3 /*break*/, 5];
+                    case 4:
+                        e_1 = _a.sent();
+                        console.log(e_1);
+                        isReceiverBusy = false;
+                        return [3 /*break*/, 5];
+                    case 5: return [2 /*return*/];
+                }
+            });
+        }); }, 5);
     };
     Ipc.prototype.setIpcListener = function () {
         var _this = this;

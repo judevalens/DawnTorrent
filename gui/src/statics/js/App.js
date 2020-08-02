@@ -63,9 +63,8 @@ var App = /** @class */ (function () {
         var _this = this;
         var _a, _b, _c, _d;
         // @ts-ignore
-        electron_1.ipcRenderer.on("answer", function (event, args) {
+        electron_1.ipcRenderer.on("answer", function (event, msg) {
             console.log("incoming response");
-            var msg = JSON.parse(args);
             console.log(msg);
             _this.msgRouter(msg);
         });

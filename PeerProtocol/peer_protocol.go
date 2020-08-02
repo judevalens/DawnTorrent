@@ -9,37 +9,28 @@ import (
 	"time"
 )
 
-const (
-	pieceHashLen = 20
-)
-
 type Torrent struct {
 	PeerSwarm  *PeerSwarm
 	Downloader *TorrentDownloader
 
-
 	jobQueue *JobQueue.WorkerPool
 
-	PieceCounter int
-	chokeCounter int
-	done         chan bool
-	lifeCycleWG  *sync.WaitGroup
-	StartedState        chan int
-	StoppedState chan int
+	PieceCounter     int
+	chokeCounter     int
+	done             chan bool
+	LifeCycleChannel chan int
 
-	PieceRequestManagerPeriodicFunc  *periodicFunc
+	PieceRequestManagerPeriodicFunc   *periodicFunc
 	trackerRegularRequestPeriodicFunc *periodicFunc
+	incomingConnectionPeriodicFunc    *periodicFunc
 }
 
 func NewTorrent(torrentPath string, mode int) *Torrent {
 	torrent := new(Torrent)
-	torrent.StartedState = make(chan int)
-	torrent.StoppedState = make(chan int)
-	torrent.lifeCycleWG  = new(sync.WaitGroup)
-
+	torrent.LifeCycleChannel = make(chan int)
 
 	/// initializes or resumes a torrent a file
-	fmt.Printf("mode %v",mode)
+	fmt.Printf("mode %v", mode)
 	if mode == InitTorrentFile_ {
 		// creates a brand new Torrent
 		torrent.Downloader = initDownloader(torrentPath)
@@ -54,7 +45,7 @@ func NewTorrent(torrentPath string, mode int) *Torrent {
 
 	torrent.PieceRequestManagerPeriodicFunc = newPeriodicFunc(torrent.Downloader.PieceRequestManager)
 	torrent.trackerRegularRequestPeriodicFunc = newPeriodicFunc(torrent.PeerSwarm.trackerRegularRequest)
-	torrent.jobQueue = JobQueue.NewWorkerPool(torrent,15)
+	torrent.jobQueue = JobQueue.NewWorkerPool(torrent, 15)
 
 	torrent.jobQueue.Start()
 	return torrent
@@ -63,49 +54,56 @@ func NewTorrent(torrentPath string, mode int) *Torrent {
 func (torrent *Torrent) Pause() {
 	//	fmt.Printf("\n file test %v\n", torrent.Downloader.InfoHashHex)
 	torrent.Downloader.PiecesMutex.Lock()
-		currentPiece := torrent.Downloader.Pieces[torrent.Downloader.CurrentPieceIndex]
+	currentPiece := torrent.Downloader.Pieces[torrent.Downloader.CurrentPieceIndex]
 	//	fmt.Printf("before len of neededSUb :%v\n", len(currentPiece.neededSubPiece))
 
+	for _, req := range currentPiece.pendingRequest {
+		req.status = nonStartedRequest
+		currentPiece.neededSubPiece = append(currentPiece.neededSubPiece, req)
+	}
 
-		for _,req := range currentPiece.pendingRequest{
-			req.status = nonStartedRequest
-			currentPiece.neededSubPiece  = append(currentPiece.neededSubPiece,req)
-		}
-
-		currentPiece.pendingRequest = make([]*PieceRequest,0)
+	currentPiece.pendingRequest = make([]*PieceRequest, 0)
 	//	torrent.Downloader.saveTorrent()
 
-		torrent.PeerSwarm.killSwarm()
+	torrent.PeerSwarm.killSwarm()
 
 	//	fmt.Printf("len of neededSUb :%v\n", len(currentPiece.neededSubPiece))
-		torrent.Downloader.PiecesMutex.Unlock()
+	torrent.Downloader.PiecesMutex.Unlock()
 
 }
 
-
-
-func (torrent *Torrent) LifeCycle(){
+func (torrent *Torrent) LifeCycle() {
 	for {
 		println("running......")
-		select{
-		case <- torrent.StartedState:
-			if atomic.LoadInt32(torrent.Downloader.State) != StartedState {
-				torrent.Downloader.SetState(StartedState)
-				torrent.PieceRequestManagerPeriodicFunc.run()
-				torrent.trackerRegularRequestPeriodicFunc.run()
-				torrent.PieceRequestManagerPeriodicFunc.startFunc()
-				torrent.trackerRegularRequestPeriodicFunc.startFunc()
-			}
-		case <- torrent.StoppedState:
-			if atomic.LoadInt32(torrent.Downloader.State) == StartedState {
-				torrent.Downloader.SetState(StoppedState)
-				torrent.PieceRequestManagerPeriodicFunc.stopFunc()
-				torrent.trackerRegularRequestPeriodicFunc.stopFunc()
-				//torrent.Pause()
-				fmt.Printf("paused")
-			}
 
-		}
+		 action := <-torrent.LifeCycleChannel
+			switch action {
+			case StartedState:
+				if atomic.LoadInt32(torrent.Downloader.State) != StartedState {
+					torrent.Downloader.SetState(StartedState)
+					torrent.PieceRequestManagerPeriodicFunc.run()
+					torrent.trackerRegularRequestPeriodicFunc.run()
+					torrent.PieceRequestManagerPeriodicFunc.startFunc()
+					torrent.trackerRegularRequestPeriodicFunc.startFunc()
+					// will ignore the time interval limitation and send a request to the tracker as soon as possible
+					//	torrent.trackerRegularRequestPeriodicFunc.byPassInterval = true
+					torrent.PeerSwarm.peerOperation <- &peerOperation{operation: startReceivingIncomingConnection, peer: nil, freePeerChannel: nil}
+				}
+			case StoppedState:
+				if atomic.LoadInt32(torrent.Downloader.State) == StartedState {
+					torrent.Downloader.SetState(StoppedState)
+					torrent.PieceRequestManagerPeriodicFunc.stopFunc()
+					torrent.trackerRegularRequestPeriodicFunc.stopFunc()
+					// will ignore the time interval limitation and send a request to the tracker as soon as possible
+					//	torrent.trackerRegularRequestPeriodicFunc.byPassInterval = true
+					torrent.PeerSwarm.peerOperation <- &peerOperation{operation: stopReceivingIncomingConnection, peer: nil, freePeerChannel: nil}
+					//torrent.Pause()
+					fmt.Printf("paused")
+				}
+			case sendTrackerRequest:
+				// will ignore the time interval limitation and send a request to the tracker as soon as possible
+				torrent.trackerRegularRequestPeriodicFunc.byPassInterval = true
+			}
 	}
 }
 
@@ -191,7 +189,7 @@ func (torrent *Torrent) msgRouter(msg *MSG) {
 		if msg.PieceIndex < torrent.Downloader.nPiece {
 			// verifies that the length of the data is not greater or smaller than amount requested
 			if msg.PieceLen == torrent.Downloader.subPieceLength || msg.PieceLen == torrent.Downloader.Pieces[msg.PieceIndex].Len%torrent.Downloader.subPieceLength {
-			//	_ = torrent.Downloader.AddSubPiece(msg, msg.Peer)
+				//	_ = torrent.Downloader.AddSubPiece(msg, msg.Peer)
 				torrent.Downloader.addPieceChannel <- msg
 			}
 		}
@@ -209,10 +207,9 @@ func (torrent *Torrent) msgRouter(msg *MSG) {
 
 }
 
+func (torrent *Torrent) Worker(id int) {
 
-func (torrent *Torrent)Worker(id int){
-
-	for request := range  torrent.jobQueue.JobQueue {
+	for request := range torrent.jobQueue.JobQueue {
 		switch item := request.(type) {
 
 		case *MSG:
@@ -222,7 +219,7 @@ func (torrent *Torrent)Worker(id int){
 				torrent.PeerSwarm.peerMutex.Lock()
 				defer func() {
 					r := recover()
-					if recover() != nil{
+					if recover() != nil {
 						println(r)
 					}
 				}()
@@ -239,24 +236,25 @@ func (torrent *Torrent)Worker(id int){
 	}
 }
 
-
-type periodicFuncExecutor  func(periodic *periodicFunc)
+type periodicFuncExecutor func(periodic *periodicFunc)
 
 type periodicFunc struct {
-	executor periodicFuncExecutor
-	isRunning bool
-	stop chan bool
-	interval time.Duration
+	executor          periodicFuncExecutor
+	byPassInterval    bool
+	isRunning         bool
+	stop              chan bool
+	event             chan int
+	interval          time.Duration
 	lastExecTimeStamp time.Time
-	isStop bool
-	tick *time.Ticker
-	wg *sync.WaitGroup
+	isStop            bool
+	tick              *time.Ticker
+	wg                *sync.WaitGroup
 }
 
-func newPeriodicFunc(executor periodicFuncExecutor) *periodicFunc{
+func newPeriodicFunc(executor periodicFuncExecutor) *periodicFunc {
 	periodicFunc := new(periodicFunc)
 	periodicFunc.stop = make(chan bool)
-	periodicFunc.interval = time.Millisecond*200
+	periodicFunc.interval = time.Millisecond * 200
 	periodicFunc.tick = time.NewTicker(periodicFunc.interval)
 	periodicFunc.executor = executor
 	periodicFunc.lastExecTimeStamp = time.Now()
@@ -264,22 +262,23 @@ func newPeriodicFunc(executor periodicFuncExecutor) *periodicFunc{
 	return periodicFunc
 }
 
-func(periodicFunc *periodicFunc) run(){
-	if !periodicFunc.isRunning{
+func (periodicFunc *periodicFunc) run() {
+	if !periodicFunc.isRunning {
 
 		println("periodicFunc is running..........")
 		go func() {
-			for{
+			for {
 				select {
-
-				case stop := <- periodicFunc.stop:
+				case stop := <-periodicFunc.stop:
 					periodicFunc.isStop = stop
 					if !periodicFunc.isStop {
 						periodicFunc.executor(periodicFunc)
+					} else {
+
 					}
-				case  <- periodicFunc.tick.C :
+				case <-periodicFunc.tick.C:
 					//println("exec func ..............")
-					if !periodicFunc.isStop{
+					if !periodicFunc.isStop {
 						periodicFunc.executor(periodicFunc)
 					}
 				}
@@ -291,10 +290,10 @@ func(periodicFunc *periodicFunc) run(){
 
 }
 
-func (periodicFunc *periodicFunc) startFunc(){
+func (periodicFunc *periodicFunc) startFunc() {
 	periodicFunc.stop <- false
 }
 
-func (periodicFunc *periodicFunc) stopFunc(){
+func (periodicFunc *periodicFunc) stopFunc() {
 	periodicFunc.stop <- true
 }

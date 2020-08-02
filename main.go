@@ -28,6 +28,9 @@ const (
 
 type DawnTorrentClient struct {
 	torrents map[string]*PeerProtocol.Torrent
+	server *zmq.Socket
+	uiResponseQueue *uiResponseQueue
+	uiRequestQueue		*uiRequestQueue
 }
 
 func main() {
@@ -68,40 +71,43 @@ func jobsMaker(worker *JobQueue.WorkerPool){
 	}
 }
 
-func (dawnTorrentClient DawnTorrentClient) startZMQ(){
+func (dawnTorrentClient *DawnTorrentClient) startZMQ(){
+
+	dawnTorrentClient.uiResponseQueue = new(uiResponseQueue)
+	dawnTorrentClient.uiResponseQueue.queue = JobQueue.NewWorkerPool(dawnTorrentClient.uiResponseQueue,1)
+	dawnTorrentClient.uiResponseQueue.dawnTorrentClient = dawnTorrentClient
+	dawnTorrentClient.uiRequestQueue = new(uiRequestQueue)
+	dawnTorrentClient.uiRequestQueue.queue = JobQueue.NewWorkerPool(dawnTorrentClient.uiRequestQueue,1)
+	dawnTorrentClient.uiRequestQueue.dawnTorrentClient = dawnTorrentClient
+	dawnTorrentClient.uiRequestQueue.queue.Start()
+	dawnTorrentClient.uiResponseQueue.queue.Start()
 	context, _ := zmq.NewContext()
 
-	server, _ := zmq.NewSocket(zmq.REP)
+	dawnTorrentClient.server, _ = zmq.NewSocket(zmq.PAIR)
 
-	errIpcServer := server.Bind("tcp://*:5555")
+	ipcPath := utils.GetPath(utils.Ipc,"tmp/feeds/10","")
+	println("ipc Path")
+	println(ipcPath)
+	errIpcServer := dawnTorrentClient.server.Bind("ipc://"+ipcPath+"/1")
 
 	if errIpcServer != nil{
-		log.Fatal(errIpcServer)
+		log.Fatal("err zmq : \n" + errIpcServer.Error())
 	}
 	fmt.Printf("\n context zmq %v\n", context)
 
 
 	for {
-		msgJSON, _ := server.Recv(zmq.SNDMORE)
+		msgJSON, _ := dawnTorrentClient.server.Recv(zmq.SNDMORE)
 		msg := new(IpcMsg)
 
-	//	fmt.Printf("%v\n",string(msgJSON))
+	//fmt.Printf("%v\n",string(msgJSON))
 		errTorrentIPCData := json.Unmarshal([]byte(msgJSON),msg)
 
 		if errTorrentIPCData != nil{
 			log.Fatal(errTorrentIPCData)
 		}
 
-		dawnTorrentClient.CommandRouter(msg)
-		res , jsonErr := json.Marshal(msg)
-		if jsonErr != nil{
-			log.Fatal(jsonErr)
-		}
-		_, sendingError := server.Send(string(res), zmq.DONTWAIT)
-
-		if sendingError != nil{
-			log.Fatal(sendingError)
-		}
+		dawnTorrentClient.uiRequestQueue.queue.AddJob(msg)
 
 	}
 
@@ -131,26 +137,56 @@ func (dawnTorrentClient *DawnTorrentClient) PauseTorrent (command *Command){
 	fmt.Printf("torrent to pause \n %v\n",dawnTorrentClient.torrents[command.TorrentIPCData.InfoHashHex])
 	torrent  := dawnTorrentClient.torrents[command.TorrentIPCData.InfoHashHex]
 	fmt.Printf("torrent infoHash : %v\n",torrent.Downloader.InfoHashHex)
-	torrent.StoppedState <- PeerProtocol.StoppedState
+	torrent.LifeCycleChannel <- PeerProtocol.StoppedState
 	command.TorrentIPCData.State = PeerProtocol.StoppedState
 	fmt.Printf("pause TEST DONE")
 
 }
 func (dawnTorrentClient *DawnTorrentClient) Resume (command *Command){
 	println("resuming........")
-	dawnTorrentClient.torrents[command.TorrentIPCData.InfoHashHex].StartedState <- PeerProtocol.StartedState
+	dawnTorrentClient.torrents[command.TorrentIPCData.InfoHashHex].LifeCycleChannel <- PeerProtocol.StartedState
 	command.TorrentIPCData.State = PeerProtocol.StartedState
 }
 
 func (dawnTorrentClient *DawnTorrentClient) GetProgress (command *Command){
-	fmt.Printf("\nInfoHashHex : %v\n",command.TorrentIPCData.InfoHashHex)
+	/////fmt.Printf("\nInfoHashHex : %v\n",command.TorrentIPCData.InfoHashHex)
 
 	command.TorrentIPCData.CurrentLen = dawnTorrentClient.torrents[command.TorrentIPCData.InfoHashHex].Downloader.TotalDownloaded
 	command.TorrentIPCData.DownloadRate =  dawnTorrentClient.torrents[command.TorrentIPCData.InfoHashHex].Downloader.DownloadRate
 }
 
+type uiRequestQueue struct {
+	queue *JobQueue.WorkerPool
+	dawnTorrentClient	*DawnTorrentClient
+}
 
+type uiResponseQueue struct {
+	queue *JobQueue.WorkerPool
+	dawnTorrentClient	*DawnTorrentClient
+}
 
+func (uiResponseQueue uiResponseQueue) Worker(id int){
+	for responseI := range  uiResponseQueue.queue.JobQueue {
+		response := responseI.(*IpcMsg)
+		res , jsonErr := json.Marshal(response)
+		if jsonErr != nil{
+			log.Fatal(jsonErr)
+		}
+		_, sendingError := uiResponseQueue.dawnTorrentClient.server.Send(string(res), zmq.DONTWAIT)
+
+		if sendingError != nil{
+			log.Fatal(sendingError)
+		}
+	}
+}
+
+func (uiRequestQueue uiRequestQueue) Worker(id int){
+
+	for requestI := range  uiRequestQueue.queue.JobQueue {
+		request := requestI.(*IpcMsg)
+		uiRequestQueue.dawnTorrentClient.CommandRouter(request)
+	}
+	}
 
 func initClient() *DawnTorrentClient {
 	dawnTorrentClient := new(DawnTorrentClient)
@@ -215,6 +251,8 @@ func (dawnTorrentClient *DawnTorrentClient) CommandRouter (msg *IpcMsg){
 		}
 	}
 
+	dawnTorrentClient.uiResponseQueue.queue.AddJob(msg)
+
 }
 
 func(dawnTorrentClient *DawnTorrentClient) getClientInitData(ipcMsg *IpcMsg) *IpcMsg{
@@ -243,6 +281,7 @@ type Command struct {
 type IpcMsg struct {
 	CommandType int
 	Commands    []*Command
+	MsgIndex int
 }
 
 

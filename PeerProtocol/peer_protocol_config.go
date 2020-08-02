@@ -8,7 +8,9 @@ const (
 	StartedState           = 0
 	StoppedState           = 1
 	CompletedState         = 2
-	SubPieceLen            = 16384
+ sendTrackerRequest = 3
+
+SubPieceLen            = 16384
 	maxWaitingTime         = time.Millisecond*300
 	maxRequest             = 8
 	peerDownloadRatePeriod = time.Second*30

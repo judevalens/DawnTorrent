@@ -485,7 +485,6 @@ func (downloader *TorrentDownloader) fileAssembler() {
 				for i := nPendingRequest - 1; i >= 0; i-- {
 					if i < len(msg.Peer.peerPendingRequest) {
 						pendingRequest := msg.Peer.peerPendingRequest[i]
-
 						pendingRequest.status = completedRequest
 						msg.Peer.peerPendingRequest[i], msg.Peer.peerPendingRequest[len(msg.Peer.peerPendingRequest)-1] = msg.Peer.peerPendingRequest[len(msg.Peer.peerPendingRequest)-1], nil
 						msg.Peer.peerPendingRequest = msg.Peer.peerPendingRequest[:len(msg.Peer.peerPendingRequest)-1]
@@ -657,6 +656,7 @@ func (downloader *TorrentDownloader) fileAssembler() {
 //	Selects Pieces that need to be downloaded
 //	When a piece is completely downloaded , a new one is selected
 func (downloader *TorrentDownloader) PieceRequestManager(periodic *periodicFunc) {
+	println("request piece !!!!!!!!!!!")
 	if atomic.LoadInt32(downloader.State) == StartedState {
 
 		downloader.PiecesMutex.Lock()
