@@ -9,6 +9,7 @@ type QueueWorker interface {
 type WorkerPool struct {
 	nWorker  int
 	JobQueue chan interface{}
+	queue 		[]interface{}
 	Worker   QueueWorker
 
 }
@@ -30,7 +31,7 @@ func NewWorkerPool(worker QueueWorker,nWorker int) *WorkerPool {
 /*func worker(workerPool *WorkerPool, id int ){
 	for j := range  workerPool.jobQueue{
 		ans := j * 5
-		fmt.Printf("job done by woker #%v, result is : %v\n",id, ans)
+		fmt.Printf("job done by worker #%v, result is : %v\n",id, ans)
 	}
 }
 */
@@ -43,6 +44,5 @@ func (workerPool *WorkerPool)Start(){
 
 
 func (workerPool *WorkerPool) AddJob(j interface{}){
-
 	workerPool.JobQueue <- j
 }

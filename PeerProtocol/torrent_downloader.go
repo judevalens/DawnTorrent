@@ -53,6 +53,8 @@ func initDownloader(torrentPath string) *TorrentDownloader {
 	fileProperties := make([]*fileProperty, 0)
 	downloader.Name = metaInfo.MapDict["info"].MapString["name"]
 	totalLength := 0
+
+
 	if isPresent {
 		downloader.FileMode = 1
 		for fileIndex, v := range metaInfo.MapDict["info"].MapList["files"].LDict {
@@ -172,13 +174,13 @@ func (downloader *TorrentDownloader) saveTorrent() {
 	SavedTorrentDataJSONEncoder.SetIndent("", "")
 	_ = SavedTorrentDataJSONEncoder.Encode(SavedTorrentData)
 
-	pieceHashPath := utils.GetPath(utils.PieceHashPath, downloader.Name,"piecesHash.sha1")
+	pieceHashPath := utils.GetPath(utils.PieceHashPath, downloader.Name, "piecesHash.sha1")
 
 	if _, err := os.Stat(pieceHashPath); os.IsNotExist(err) {
 		_ = ioutil.WriteFile(pieceHashPath, []byte(downloader.piecesSha1Hash), os.ModePerm)
 	}
 
-	savedTorrentDataPath := utils.GetPath(utils.TorrentDataPath, downloader.Name,downloader.Name+".json")
+	savedTorrentDataPath := utils.GetPath(utils.TorrentDataPath, downloader.Name, downloader.Name+".json")
 	wErr := ioutil.WriteFile(savedTorrentDataPath, SavedTorrentDataBuffer.Bytes(), os.ModePerm)
 	if wErr != nil {
 		fmt.Printf("%v", wErr)
@@ -566,11 +568,11 @@ func (downloader *TorrentDownloader) fileAssembler() {
 							var errOpenFile error
 
 							var path string
-							if len(downloader.FileProperties) > 1{
-								path = utils.GetPath(utils.DownloadedFile,downloader.Name,currentFile.Path)
-							}else{
-								path = utils.GetPath(utils.DownloadedFile,"",currentFile.Path)
-								}
+							if len(downloader.FileProperties) > 1 {
+								path = utils.GetPath(utils.DownloadedFile, downloader.Name, currentFile.Path)
+							} else {
+								path = utils.GetPath(utils.DownloadedFile, "", currentFile.Path)
+							}
 
 							f, errOpenFile = os.OpenFile(path, os.O_CREATE|os.O_RDWR, os.ModePerm)
 							if errOpenFile != nil {
