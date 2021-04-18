@@ -25,27 +25,27 @@ type containerInformation struct {
 	Index                 int
 }
 
-type dictList struct {
+type BList struct {
 	DataList     []*containerInformation
-	LString      []string
-	LDict        []*Dict
-	LList        []*dictList
+	Strings      []string
+	BMaps        []*BMap
+	BLists       []*BList
 	value        string
 	KeyInfo      *containerInformation
 	OriginalFile []byte
 }
 
-type Dict struct {
-	DataList     []*containerInformation
-	MapString    map[string]string
-	MapDict      map[string]*Dict
-	MapList      map[string]*dictList
-	KeyInfo      *containerInformation
+type BMap struct {
+	DataList []*containerInformation
+	Strings  map[string]string
+	BMaps    map[string]*BMap
+	BLists   map[string]*BList
+	KeyInfo  *containerInformation
 }
 
 type Result struct {
-	dict     *Dict
-	dList    *dictList
+	dict     *BMap
+	dList    *BList
 	position int
 	field    byte
 }
@@ -58,15 +58,15 @@ type Delimiter struct {
 	position      int
 }
 
-func Unmarshall(path string) *Dict {
+func Unmarshall(path string) *BMap {
 
 	file, _ := ReadFile(path)
 	return UnmarshallFromArray(file)
 }
 
-func UnmarshallFromArray(file []byte) *Dict {
+func UnmarshallFromArray(file []byte) *BMap {
 
-	dict := new(Dict)
+	dict := new(BMap)
 	containerInfo := new(containerInformation)
 	containerInfo.key = "origin"
 	containerInfo.dType = "d"
@@ -161,7 +161,7 @@ func getField(file []byte, pos int, dtype byte) ([]string, int, byte) {
 	return seq, pos, field
 }
 
-func Parse(dict *Dict, file []byte, pos int) Result {
+func Parse(dict *BMap, file []byte, pos int) Result {
 
 	// determine which container it is (map or list)
 	field := file[pos]
@@ -175,9 +175,9 @@ func Parse(dict *Dict, file []byte, pos int) Result {
 	if field == 'd' {
 
 		dict.DataList = make([]*containerInformation, 0)
-		dict.MapString = make(map[string]string, 0)
-		dict.MapList = make(map[string]*dictList)
-		dict.MapDict = make(map[string]*Dict)
+		dict.Strings = make(map[string]string, 0)
+		dict.BLists = make(map[string]*BList)
+		dict.BMaps = make(map[string]*BMap)
 
 		for !EOL {
 
@@ -204,7 +204,7 @@ func Parse(dict *Dict, file []byte, pos int) Result {
 			if field == 0 || field == 'e' {
 				containerInfo.dType = "s"
 				dict.DataList = append(dict.DataList, containerInfo)
-				dict.MapString[data[0]] = data[1]
+				dict.Strings[data[0]] = data[1]
 
 			//	println("key " + data[0])
 			///	println("value " + data[1])
@@ -213,7 +213,7 @@ func Parse(dict *Dict, file []byte, pos int) Result {
 			} else if field == 'l' {
 
 				result := Parse(dict, file, position)
-				dict.MapList[data[0]] = result.dList
+				dict.BLists[data[0]] = result.dList
 				containerInfo.dType = "l"
 				result.dList.KeyInfo = containerInfo
 				dict.DataList = append(dict.DataList, containerInfo)
@@ -225,14 +225,14 @@ func Parse(dict *Dict, file []byte, pos int) Result {
 			} else if field == 'd' {
 
 				dict.DataList = append(dict.DataList, containerInfo)
-				innerDict := new(Dict)
+				innerDict := new(BMap)
 				result := Parse(innerDict, file, position)
 				containerInfo.dType = "d"
 
 				result.dict.KeyInfo = containerInfo
 				position = result.position
 				position++
-				dict.MapDict[data[0]] = result.dict
+				dict.BMaps[data[0]] = result.dict
 				dict.KeyInfo = containerInfo
 
 			//	println("position " + strconv.Itoa(position))
@@ -248,14 +248,14 @@ func Parse(dict *Dict, file []byte, pos int) Result {
 			_ = position
 		}
 
-		return Result{dict: dict, dList: new(dictList), position: position, field: field}
+		return Result{dict: dict, dList: new(BList), position: position, field: field}
 
 	} else if field == 'l' {
 
-		dList := new(dictList)
-		dList.LString = make([]string, 0)
-		dList.LList = make([]*dictList, 0)
-		dList.LDict = make([]*Dict, 0)
+		dList := new(BList)
+		dList.Strings = make([]string, 0)
+		dList.BLists = make([]*BList, 0)
+		dList.BMaps = make([]*BMap, 0)
 		for !EOL {
 			containerInfo := new(containerInformation)
 			containerInfo.StartingPosition = position
@@ -269,19 +269,19 @@ func Parse(dict *Dict, file []byte, pos int) Result {
 			if field == 'e' {
 				containerInfo.dType = "s"
 				dList.DataList = append(dList.DataList,containerInfo)
-				dList.LString = append(dList.LString, data[0])
+				dList.Strings = append(dList.Strings, data[0])
 			//	println("adding string to list")
 			//	println("Field " + string(field))
 
 			} else if field == 'l' {
 				containerInfo.dType = "l"
-				containerInfo.key = strconv.Itoa(len(dList.LList))
+				containerInfo.key = strconv.Itoa(len(dList.BLists))
 
 				dList.DataList = append(dList.DataList,containerInfo)
 
 				result := Parse(dict, file, position)
 				dList.KeyInfo = containerInfo
-				dList.LList = append(dList.LList, result.dList)
+				dList.BLists = append(dList.BLists, result.dList)
 				position = result.position
 				position++
 			//	println("adding list to list")
@@ -290,11 +290,11 @@ func Parse(dict *Dict, file []byte, pos int) Result {
 				containerInfo.dType = "d"
 				dList.DataList = append(dList.DataList,containerInfo)
 
-				containerInfo.key = strconv.Itoa(len(dList.LDict))
-				innerDict := new(Dict)
+				containerInfo.key = strconv.Itoa(len(dList.BMaps))
+				innerDict := new(BMap)
 				result := Parse(innerDict, file, position)
 				dList.KeyInfo = containerInfo
-				dList.LDict = append(dList.LDict, result.dict)
+				dList.BMaps = append(dList.BMaps, result.dict)
 				position = result.position
 				position++
 			//	println("adding dict to list")
@@ -309,7 +309,7 @@ func Parse(dict *Dict, file []byte, pos int) Result {
 			_ = position
 		}
 
-		return Result{dict: new(Dict), dList: dList, position: position, field: field}
+		return Result{dict: new(BMap), dList: dList, position: position, field: field}
 	}
 
 	return Result{}
@@ -318,7 +318,7 @@ func Parse(dict *Dict, file []byte, pos int) Result {
 func ToBencode(container interface{}) string{
 	var containerS string
 	switch container := container.(type) {
-	case *Dict:
+	case *BMap:
 		//println("ITS A DICT")
 		containerS += "d"
 		for _, info := range container.DataList {
@@ -326,7 +326,7 @@ func ToBencode(container interface{}) string{
 			containerS += strconv.Itoa(keyLen) + ":" + info.key
 			switch info.dType {
 			case "s":
-				content := container.MapString[info.key]
+				content := container.Strings[info.key]
 				contentLen := len(content)
 
 				_,isNumber := strconv.Atoi(content)
@@ -340,10 +340,10 @@ func ToBencode(container interface{}) string{
 
 				containerS += content
 			case "l":
-				result := ToBencode(container.MapList[info.key])
+				result := ToBencode(container.BLists[info.key])
 				containerS += result
 			case "d":
-				result := ToBencode(container.MapDict[info.key])
+				result := ToBencode(container.BMaps[info.key])
 				containerS += result
 			}
 
@@ -351,19 +351,19 @@ func ToBencode(container interface{}) string{
 		containerS += "e"
 		return containerS
 
-	case *dictList:
+	case *BList:
 		containerS += "l"
 		for _,info := range container.DataList{
 			switch info.dType {
 			case "s":
-				content := container.LString[info.Index]
+				content := container.Strings[info.Index]
 				contentLen := len(content)
 				containerS += strconv.Itoa(contentLen)+ ":"+content
 			case "d":
-				result := ToBencode(container.LDict[info.Index])
+				result := ToBencode(container.BMaps[info.Index])
 				containerS += result
 			case "l":
-				result := ToBencode(container.LList[info.Index])
+				result := ToBencode(container.BLists[info.Index])
 				containerS += result
 
 			}

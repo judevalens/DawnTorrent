@@ -11,7 +11,7 @@ func TestUnmarshallFromArray(t *testing.T)	{
 
 	var _ = []struct{
 		input string
-		output	*Dict
+		output	*BMap
 	}{
 		{"/home/jude/GolandProjects/DawnTorrent/files/ubuntu-20.04-desktop-amd64.iso.torrent",nil},
 	}

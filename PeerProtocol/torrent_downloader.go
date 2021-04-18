@@ -42,32 +42,32 @@ func initDownloader(torrentPath string) *TorrentDownloader {
 	downloader.InfoHash = infoHashString
 	downloader.infoHashByte = infoHashByte
 	downloader.InfoHashHex = hex.EncodeToString(downloader.infoHashByte[:])
-	downloader.Announce = metaInfo.MapString["announce"]
+	downloader.Announce = metaInfo.Strings["announce"]
 
 	downloader.AnnounceList = make([]string, 0)
-	downloader.CreationDate = metaInfo.MapString["creation date"]
-	downloader.Encoding = metaInfo.MapString["encoding"]
-	downloader.piecesSha1Hash = metaInfo.MapDict["info"].MapString["pieces"]
-	downloader.pieceLength, _ = strconv.Atoi(metaInfo.MapDict["info"].MapString["piece length"])
-	_, isPresent := metaInfo.MapDict["info"].MapList["files"]
+	downloader.CreationDate = metaInfo.Strings["creation date"]
+	downloader.Encoding = metaInfo.Strings["encoding"]
+	downloader.piecesSha1Hash = metaInfo.BMaps["info"].Strings["pieces"]
+	downloader.pieceLength, _ = strconv.Atoi(metaInfo.BMaps["info"].Strings["piece length"])
+	_, isPresent := metaInfo.BMaps["info"].BLists["files"]
 	fileProperties := make([]*fileProperty, 0)
-	downloader.Name = metaInfo.MapDict["info"].MapString["name"]
+	downloader.Name = metaInfo.BMaps["info"].Strings["name"]
 	totalLength := 0
 
 
 	if isPresent {
 		downloader.FileMode = 1
-		for fileIndex, v := range metaInfo.MapDict["info"].MapList["files"].LDict {
-			filePath := v.MapList["path"].LString[0]
-			fileLength, _ := strconv.Atoi(v.MapString["length"])
+		for fileIndex, v := range metaInfo.BMaps["info"].BLists["files"].BMaps {
+			filePath := v.BLists["path"].Strings[0]
+			fileLength, _ := strconv.Atoi(v.Strings["length"])
 			totalLength += fileLength
 			newFile := createFileProperties(fileProperties, filePath, fileLength, fileIndex)
 			fileProperties = append(fileProperties, newFile)
 		}
 	} else {
 		downloader.FileMode = 0
-		filePath := metaInfo.MapDict["info"].MapString["name"]
-		fileLength, _ := strconv.Atoi(metaInfo.MapDict["info"].MapString["length"])
+		filePath := metaInfo.BMaps["info"].Strings["name"]
+		fileLength, _ := strconv.Atoi(metaInfo.BMaps["info"].Strings["length"])
 		totalLength += fileLength
 		fileProperties = append(fileProperties, createFileProperties(fileProperties, filePath, fileLength, 0))
 	}
@@ -335,13 +335,13 @@ func createFileProperties(fileProperties []*fileProperty, filePath string, fileL
 }
 
 // calculates the info hash based on pieces provided in the .torrent file
-func GetInfoHash(dict *parser.Dict) (string, [20]byte) {
+func GetInfoHash(dict *parser.BMap) (string, [20]byte) {
 
 	// InnerStartingPosition leaves out the key
 
-	startingPosition := dict.MapDict["info"].KeyInfo.InnerStartingPosition
+	startingPosition := dict.BMaps["info"].KeyInfo.InnerStartingPosition
 
-	endingPosition := dict.MapDict["info"].KeyInfo.EndingPosition
+	endingPosition := dict.BMaps["info"].KeyInfo.EndingPosition
 
 	torrentFileString := parser.ToBencode(dict)
 

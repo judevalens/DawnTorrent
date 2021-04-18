@@ -3,11 +3,8 @@ package protocol
 import (
 	"DawnTorrent/parser"
 	"encoding/binary"
-	"github.com/emirpasic/gods/maps/hashmap"
-	"math"
 	"net"
 	"strconv"
-	"sync"
 	"time"
 )
 
@@ -33,11 +30,11 @@ type Peer struct {
 }
 
 
-func (peerSwarm *PeerSwarm) NewPeer(dict *parser.Dict) *Peer {
+func (peerSwarm *PeerSwarm) NewPeer(dict *parser.BMap) *Peer {
 	newPeer := new(Peer)
-	newPeer.id = dict.MapString["peer id"]
-	newPeer.port = dict.MapString["port"]
-	newPeer.ip = dict.MapString["ip"]
+	newPeer.id = dict.Strings["peer id"]
+	newPeer.port = dict.Strings["port"]
+	newPeer.ip = dict.Strings["ip"]
 	newPeer.peerIsChocking = true
 	newPeer.interested = false
 	newPeer.chocked = true
@@ -72,11 +69,11 @@ func (peerSwarm *PeerSwarm) newPeerFromBytes(peer []byte) (string, string, strin
 	return ipString, strconv.FormatUint(uint64(portBytes), 10), ipString + ":" + newPeer.port
 }
 func (peerSwarm *PeerSwarm) newPeerFromStrings(peerIp, peerPort, peerID string) *Peer {
-	peerDict := new(parser.Dict)
-	peerDict.MapString = make(map[string]string)
-	peerDict.MapString["ip"] = peerIp
-	peerDict.MapString["port"] = peerPort
-	peerDict.MapString["peer id"] = peerID
+	peerDict := new(parser.BMap)
+	peerDict.Strings = make(map[string]string)
+	peerDict.Strings["ip"] = peerIp
+	peerDict.Strings["port"] = peerPort
+	peerDict.Strings["peer id"] = peerID
 	newPeer := peerSwarm.NewPeer(peerDict)
 	return newPeer
 

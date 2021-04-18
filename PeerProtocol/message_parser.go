@@ -57,14 +57,14 @@ var (
 type MSG struct {
 	MsgID          int
 	MsgLen         int
-	MsgPrefixLen int
+	MsgPrefixLen   int
 	field          map[string][]byte
 	PieceIndex     int
 	BeginIndex     int
 	BitfieldRaw    []byte
 	PieceLen       int
 	Piece          []byte
-	rawMsg         []byte
+	RawMsg         []byte
 	availablePiece []bool
 	InfoHash       []byte
 	MyPeerID       string
@@ -85,24 +85,24 @@ type HandShakeMsg struct {
 	protocolIdentifier []byte
 }
 
-type udpMSG struct {
+type UdpMSG struct {
 	action        int
 	connectionID  int
 	transactionID int
-	infoHash      []byte
-	peerID        []byte
-	downloaded    int
-	left          int
-	uploaded      int
-	event         int
-	ip            []byte
-	key           int
-	numWant       int
+	infoHash       []byte
+	peerID         []byte
+	downloaded     int
+	left           int
+	uploaded       int
+	event          int
+	ip             []byte
+	key            int
+	numWant        int
 	port           int
-	interval int
-	leechers int
-	seeders int
-	peersAddresses []byte
+	Interval       int
+	leechers       int
+	seeders        int
+	PeersAddresses []byte
 	
 }
 
@@ -112,7 +112,7 @@ func GetMsg(msg MSG, peer *Peer) *MSG {
 	msgStruct.Peer = peer
 	msgStruct.msgType = outgoingMsg
 	msgStruct.MsgID = msg.MsgID
-	msgStruct.rawMsg = make([]byte, 0)
+	msgStruct.RawMsg = make([]byte, 0)
 	switch msg.MsgID {
 
 	case HandShakeMsgID:
@@ -145,7 +145,7 @@ func GetMsg(msg MSG, peer *Peer) *MSG {
 
 	}
 
-	msgStruct.rawMsg = msgByte
+	msgStruct.RawMsg = msgByte
 	return msgStruct
 }
 
@@ -260,7 +260,7 @@ func ParseHandShake(msg []byte, infoHash string) (HandShakeMsg, error) {
 	return msgStruct, err
 }
 
-func udpTrackerConnectMsg(msg udpMSG) []byte {
+func udpTrackerConnectMsg(msg UdpMSG) []byte {
 	var msgByte = make([]byte, 0)
 
 	msgByte = bytes.Join([][]byte{intToByte(msg.connectionID, 8), intToByte(msg.action, 4), intToByte(int(msg.transactionID), 4)}, []byte{})
@@ -269,7 +269,7 @@ func udpTrackerConnectMsg(msg udpMSG) []byte {
 
 }
 
-func udpTrackerAnnounceMsg(msg udpMSG) []byte {
+func udpTrackerAnnounceMsg(msg UdpMSG) []byte {
 	var msgByte = make([]byte, 0)
 
 	//TODO
@@ -280,8 +280,8 @@ func udpTrackerAnnounceMsg(msg udpMSG) []byte {
 	return msgByte
 }
 
-func parseUdpTrackerResponse(msg []byte,msgSize int) (udpMSG,error){
-	msgStruct := udpMSG{}
+func parseUdpTrackerResponse(msg []byte,msgSize int) (UdpMSG,error){
+	msgStruct := UdpMSG{}
 	var err error
 
 	if msgSize >= 16 {
@@ -292,10 +292,10 @@ func parseUdpTrackerResponse(msg []byte,msgSize int) (udpMSG,error){
 			msgStruct.connectionID = int(binary.BigEndian.Uint64(msg[8:16]))
 		}else if msgStruct.action == udpAnnounceRequest{
 			if msgSize > 20 {
-				msgStruct.interval = int(binary.BigEndian.Uint32(msg[8:12]))
+				msgStruct.Interval = int(binary.BigEndian.Uint32(msg[8:12]))
 				msgStruct.leechers = int(binary.BigEndian.Uint32(msg[12:16]))
 				msgStruct.seeders = int(binary.BigEndian.Uint32(msg[16:20]))
-				msgStruct.peersAddresses = msg[20:msgSize]
+				msgStruct.PeersAddresses = msg[20:msgSize]
 			}else{
 				err = errors.New("udp msg er | length too short 2")
 

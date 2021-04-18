@@ -224,7 +224,7 @@ func (torrent *Torrent) Worker(id int) {
 					}
 				}()
 				if item.Peer != nil {
-					_, _ = item.Peer.connection.Write(item.rawMsg)
+					_, _ = item.Peer.connection.Write(item.RawMsg)
 				}
 				torrent.PeerSwarm.peerMutex.Unlock()
 

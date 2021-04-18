@@ -51,44 +51,44 @@ type fileMetadata struct {
 	EndIndex   int
 }
 
-func loadTorrentFile(filePath string) *parser.Dict {
+func loadTorrentFile(filePath string) *parser.BMap {
 	return parser.Unmarshall(filePath)
 }
 
-func createNewTorrent(torrentMap *parser.Dict) *Torrent {
+func createNewTorrent(torrentMap *parser.BMap) *Torrent {
 	torrentFile := new(Torrent)
 
 	infoHashByte, hexInfoHash := GetInfoHash(torrentMap)
 
 	torrentFile.infoHashByte = infoHashByte
 	torrentFile.InfoHashHex = hexInfoHash
-	torrentFile.Announce = torrentMap.MapString["announce"]
+	torrentFile.Announce = torrentMap.Strings["announce"]
 
 	torrentFile.AnnounceList = make([]string, 0)
-	torrentFile.AnnounceList = torrentMap.MapList["announce-list"].LString
-	torrentFile.CreationDate = torrentMap.MapString["creation date"]
-	torrentFile.Encoding = torrentMap.MapString["encoding"]
-	torrentFile.piecesHash = torrentMap.MapDict["info"].MapString["pieces"]
-	torrentFile.pieceLength, _ = strconv.Atoi(torrentMap.MapDict["info"].MapString["piece length"])
+	torrentFile.AnnounceList = torrentMap.BLists["announce-list"].Strings
+	torrentFile.CreationDate = torrentMap.Strings["creation date"]
+	torrentFile.Encoding = torrentMap.Strings["encoding"]
+	torrentFile.piecesHash = torrentMap.BMaps["info"].Strings["pieces"]
+	torrentFile.pieceLength, _ = strconv.Atoi(torrentMap.BMaps["info"].Strings["piece length"])
 
-	_, isMultipleFiles := torrentMap.MapDict["info"].MapList["files"]
+	_, isMultipleFiles := torrentMap.BMaps["info"].BLists["files"]
 	var fileProperties []fileMetadata
-	torrentFile.Name = torrentMap.MapDict["info"].MapString["name"]
+	torrentFile.Name = torrentMap.BMaps["info"].Strings["name"]
 	totalLength := 0
 
 	if isMultipleFiles {
 		torrentFile.FileMode = MultipleFile
-		for fileIndex, v := range torrentMap.MapDict["info"].MapList["files"].LDict {
-			filePath := v.MapList["path"].LString[0]
-			fileLength, _ := strconv.Atoi(v.MapString["length"])
+		for fileIndex, v := range torrentMap.BMaps["info"].BLists["files"].BMaps {
+			filePath := v.BLists["path"].Strings[0]
+			fileLength, _ := strconv.Atoi(v.Strings["length"])
 			totalLength += fileLength
 			newFile := createFileProperties(fileProperties, filePath, fileLength, fileIndex)
 			fileProperties = append(fileProperties, newFile)
 		}
 	} else {
 		torrentFile.FileMode = SingleFile
-		filePath := torrentMap.MapDict["info"].MapString["name"]
-		fileLength, _ := strconv.Atoi(torrentMap.MapDict["info"].MapString["length"])
+		filePath := torrentMap.BMaps["info"].Strings["name"]
+		fileLength, _ := strconv.Atoi(torrentMap.BMaps["info"].Strings["length"])
 		totalLength += fileLength
 		fileProperties = []fileMetadata{createFileProperties(fileProperties, filePath, fileLength, 0)}
 	}
@@ -115,13 +115,13 @@ func createFileProperties(fileProperties []fileMetadata, filePath string, fileLe
 }
 
 // calculates the info hash based on pieces provided in the .torrent file
-func GetInfoHash(dict *parser.Dict) ([20]byte, string) {
+func GetInfoHash(dict *parser.BMap) ([20]byte, string) {
 
 	// InnerStartingPosition leaves out the key
 
-	startingPosition := dict.MapDict["info"].KeyInfo.InnerStartingPosition
+	startingPosition := dict.BMaps["info"].KeyInfo.InnerStartingPosition
 
-	endingPosition := dict.MapDict["info"].KeyInfo.EndingPosition
+	endingPosition := dict.BMaps["info"].KeyInfo.EndingPosition
 
 	torrentFileString := parser.ToBencode(dict)
 
