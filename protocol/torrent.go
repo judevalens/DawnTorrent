@@ -5,32 +5,45 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"strconv"
+	"sync"
+)
+
+const (
+	SingleFile   = iota
+	MultipleFile = iota
+)
+
+const(
+	NotStarted = iota
+	InProgress = iota
+	Completed = iota
 )
 
 type Torrent struct {
-	Announce       string
-	AnnounceList   []string
-	Comment        string
-	CreatedBy      string
-	CreationDate   string
-	Encoding       string
-	piecesHash     string
-	FileMode       int
-	nPiece         int
-	FileLength     int
-	subPieceLength int
-	nSubPiece      int
-	InfoHash       string
-	infoHashByte   [20]byte
-	InfoHashHex    string
-	pieceLength    int
-	Name           string
+	Announce           string
+	AnnounceList       []string
+	Comment            string
+	CreatedBy          string
+	CreationDate       string
+	Encoding           string
+	piecesHash         string
+	FileMode           int
+	FilesMetadata      []fileMetadata
+	nPiece             int
+	FileLength         int
+	subPieceLength     int
+	nSubPiece          int
+	infoHashByte       [20]byte
+	InfoHashHex        string
+	pieceLength        int
+	Name               string
 	PieceHolder        []*byte
 	PieceSelectionMode int
 }
 
-type TorrentFile struct {
+type fileMetadata struct {
 	Path       string
 	Length     int
 	FileIndex  int
@@ -38,36 +51,33 @@ type TorrentFile struct {
 	EndIndex   int
 }
 
-
-func loadTorrentFile(filePath  string) *parser.Dict {
+func loadTorrentFile(filePath string) *parser.Dict {
 	return parser.Unmarshall(filePath)
 }
 
-func createNewTorrent(torrentMap *parser.Dict)  {
-	downloader := new(Torrent)
+func createNewTorrent(torrentMap *parser.Dict) *Torrent {
+	torrentFile := new(Torrent)
 
+	infoHashByte, hexInfoHash := GetInfoHash(torrentMap)
 
-	infoHashString, infoHashByte := GetInfoHash(torrentMap)
-	downloader.InfoHash = infoHashString
-	downloader.infoHashByte = infoHashByte
-	downloader.InfoHashHex = hex.EncodeToString(downloader.infoHashByte[:])
-	downloader.Announce = torrentMap.MapString["announce"]
+	torrentFile.infoHashByte = infoHashByte
+	torrentFile.InfoHashHex = hexInfoHash
+	torrentFile.Announce = torrentMap.MapString["announce"]
 
-	downloader.AnnounceList = make([]string, 0)
-	downloader.AnnounceList = torrentMap.MapList["announce-list"].LString
-	downloader.CreationDate = torrentMap.MapString["creation date"]
-	downloader.Encoding = torrentMap.MapString["encoding"]
-	downloader.piecesHash = torrentMap.MapDict["info"].MapString["pieces"]
-	downloader.pieceLength, _ = strconv.Atoi(torrentMap.MapDict["info"].MapString["piece length"])
+	torrentFile.AnnounceList = make([]string, 0)
+	torrentFile.AnnounceList = torrentMap.MapList["announce-list"].LString
+	torrentFile.CreationDate = torrentMap.MapString["creation date"]
+	torrentFile.Encoding = torrentMap.MapString["encoding"]
+	torrentFile.piecesHash = torrentMap.MapDict["info"].MapString["pieces"]
+	torrentFile.pieceLength, _ = strconv.Atoi(torrentMap.MapDict["info"].MapString["piece length"])
 
-	_, isPresent := torrentMap.MapDict["info"].MapList["files"]
-	fileProperties := make([]*TorrentFile, 0)
-	downloader.Name = torrentMap.MapDict["info"].MapString["name"]
+	_, isMultipleFiles := torrentMap.MapDict["info"].MapList["files"]
+	var fileProperties []fileMetadata
+	torrentFile.Name = torrentMap.MapDict["info"].MapString["name"]
 	totalLength := 0
 
-
-	if isPresent {
-		downloader.FileMode = 1
+	if isMultipleFiles {
+		torrentFile.FileMode = MultipleFile
 		for fileIndex, v := range torrentMap.MapDict["info"].MapList["files"].LDict {
 			filePath := v.MapList["path"].LString[0]
 			fileLength, _ := strconv.Atoi(v.MapString["length"])
@@ -76,26 +86,18 @@ func createNewTorrent(torrentMap *parser.Dict)  {
 			fileProperties = append(fileProperties, newFile)
 		}
 	} else {
-		downloader.FileMode = 0
-		filePath := metaInfo.MapDict["info"].MapString["name"]
-		fileLength, _ := strconv.Atoi(metaInfo.MapDict["info"].MapString["length"])
+		torrentFile.FileMode = SingleFile
+		filePath := torrentMap.MapDict["info"].MapString["name"]
+		fileLength, _ := strconv.Atoi(torrentMap.MapDict["info"].MapString["length"])
 		totalLength += fileLength
-		fileProperties = append(fileProperties, createFileProperties(fileProperties, filePath, fileLength, 0))
+		fileProperties = []fileMetadata{createFileProperties(fileProperties, filePath, fileLength, 0)}
 	}
-
-	downloader.subPieceLength = SubPieceLen
-	initFile(downloader, fileProperties, totalLength, totalLength, nil, StoppedState)
-
-	downloader.PieceSelectionMode = sequentialSelection
-	downloader.SelectNewPiece = true
-
-	fmt.Printf("\n downloader Len %v , pieceLen %v, subPieceLength %v, n SubPieces %v \n", downloader.FileLength, downloader.pieceLength, downloader.subPieceLength, downloader.nSubPiece)
-	return downloader
+	return torrentFile
 }
 
 // store the path , len , start and end index of file
-func createFileProperties(fileProperties []*TorrentFile, filePath string, fileLength int, fileIndex int) TorrentFile {
-	torrent := TorrentFile{}
+func createFileProperties(fileProperties []fileMetadata, filePath string, fileLength int, fileIndex int) fileMetadata {
+	torrent := fileMetadata{}
 
 	torrent.Path = filePath
 	torrent.Length = fileLength
@@ -106,13 +108,14 @@ func createFileProperties(fileProperties []*TorrentFile, filePath string, fileLe
 		torrent.StartIndex = fileProperties[fileIndex-1].EndIndex
 	}
 
+	// end index of file is not inclusive
 	torrent.EndIndex = torrent.StartIndex + torrent.Length
 
 	return torrent
 }
 
 // calculates the info hash based on pieces provided in the .torrent file
-func GetInfoHash(dict *parser.Dict) (string, [20]byte) {
+func GetInfoHash(dict *parser.Dict) ([20]byte, string) {
 
 	// InnerStartingPosition leaves out the key
 
@@ -130,6 +133,59 @@ func GetInfoHash(dict *parser.Dict) (string, [20]byte) {
 	infoHashSlice := infoHash[:]
 	println(hex.EncodeToString(infoHashSlice))
 
-	return string(infoHashSlice), infoHash
+	return infoHash, hex.EncodeToString(infoHashSlice)
+
+}
+
+type Piece struct {
+	Len                 int
+	CurrentLen          int
+	SubPieceLen         int
+	State               int
+	Pieces              []byte
+	PieceIndex          int
+	Availability        int
+	subPieceMask        []byte
+	pieceStartIndex     int
+	pieceEndIndex       int
+	position            []pos
+	pendingRequestMutex *sync.RWMutex
+
+	nSubPiece           int
+	AvailabilityIndex   int
+}
+
+//	Creates a Piece object and initialize subPieceRequest for this piece
+func NewPiece(downloader *Torrent, PieceIndex, pieceLength int, status int) *Piece {
+	newPiece := new(Piece)
+
+	newPiece.Len = pieceLength
+	newPiece.Availability = 0
+	newPiece.PieceIndex = PieceIndex
+	newPiece.pieceStartIndex = PieceIndex * downloader.pieceLength
+	newPiece.pieceEndIndex = newPiece.pieceStartIndex + newPiece.Len
+	newPiece.nSubPiece = int(math.Ceil(float64(pieceLength) / float64(downloader.subPieceLength)))
+	//newPiece.Pieces = make([]byte, newPiece.Len)
+	newPiece.State = status
+	newPiece.subPieceMask = make([]byte, int(math.Ceil(float64(newPiece.nSubPiece)/float64(8))))
+	newPiece.pendingRequestMutex = new(sync.RWMutex)
+
+	for i := 0; i < newPiece.nSubPiece; i++ {
+		newPiece.SubPieceLen = downloader.subPieceLength
+		if i == newPiece.nSubPiece-1 {
+			if newPiece.Len%downloader.subPieceLength != 0 {
+				newPiece.SubPieceLen = newPiece.Len % downloader.subPieceLength
+				println("newPiece.SubPieceLen")
+				println(newPiece.SubPieceLen)
+				fmt.Printf("pieceLen %v\n", newPiece.Len)
+
+				if newPiece.Len != 1048576 {
+
+				}
+			}
+		}
+	}
+
+	return newPiece
 
 }
