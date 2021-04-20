@@ -140,7 +140,7 @@ func (peerSwarm *PeerSwarm) connect(peer *Peer) {
 		_ = connection.SetKeepAlive(true)
 		_ = connection.SetKeepAlivePeriod(utils.KeepAliveDuration)
 		fmt.Printf("keep ALive %v", utils.KeepAliveDuration)
-		msg := MSG{MsgID: HandShakeMsgID, InfoHash: []byte(peerSwarm.torrent.Downloader.InfoHash), MyPeerID: utils.MyID}
+		msg := MSG{ID: HandShakeMsgID, InfoHash: []byte(peerSwarm.torrent.Downloader.InfoHash), MyPeerID: utils.MyID}
 		_, _ = connection.Write(GetMsg(msg, peer).RawMsg)
 
 		handshakeBytes := make([]byte, 68)
@@ -155,8 +155,8 @@ func (peerSwarm *PeerSwarm) connect(peer *Peer) {
 				peerOperation.operation = AddActivePeer
 				peerOperation.peer = peer
 				peerSwarm.peerOperation <- peerOperation
-				peerSwarm.torrent.jobQueue.AddJob(GetMsg(MSG{MsgID: UnchockeMsg}, peer))
-				peerSwarm.torrent.jobQueue.AddJob(GetMsg(MSG{MsgID: InterestedMsg}, peer))
+				peerSwarm.torrent.jobQueue.AddJob(GetMsg(MSG{ID: UnchockeMsg}, peer))
+				peerSwarm.torrent.jobQueue.AddJob(GetMsg(MSG{ID: InterestedMsg}, peer))
 				err := peer.receive(connection, peerSwarm)
 				peerOperation.operation = RemovePeer
 				peerSwarm.peerOperation <- peerOperation
@@ -182,7 +182,7 @@ func (peerSwarm *PeerSwarm) handleNewPeer(connection *net.TCPConn) {
 
 		if handShakeErr == nil {
 			remotePeerAddr, _ := net.ResolveTCPAddr("tcp", connection.RemoteAddr().String())
-			handShakeMsgResponse := GetMsg(MSG{MsgID: HandShakeMsgID, InfoHash: []byte(peerSwarm.torrent.Downloader.InfoHash), MyPeerID: utils.MyID}, nil)
+			handShakeMsgResponse := GetMsg(MSG{ID: HandShakeMsgID, InfoHash: []byte(peerSwarm.torrent.Downloader.InfoHash), MyPeerID: utils.MyID}, nil)
 			_, writeErr := connection.Write(handShakeMsgResponse.RawMsg)
 			if writeErr == nil {
 				newPeer = peerSwarm.newPeerFromStrings(remotePeerAddr.IP.String(), strconv.Itoa(remotePeerAddr.Port), parsedHandShakeMsg.peerID)
@@ -195,7 +195,7 @@ func (peerSwarm *PeerSwarm) handleNewPeer(connection *net.TCPConn) {
 				peerOperation.operation = AddActivePeer
 				peerSwarm.peerOperation <- peerOperation
 
-				peerSwarm.torrent.jobQueue.AddJob(GetMsg(MSG{MsgID: InterestedMsg}, newPeer))
+				peerSwarm.torrent.jobQueue.AddJob(GetMsg(MSG{ID: InterestedMsg}, newPeer))
 				_ = newPeer.receive(connection, peerSwarm)
 				peerOperation.operation = RemovePeer
 				peerSwarm.peerOperation <- peerOperation
@@ -718,10 +718,10 @@ func (peer *Peer) receive(connection *net.TCPConn, peerSwarm *PeerSwarm) error {
 		if parserMsgErr == nil {
 			// TODO will probably use a worker pool here !
 			//peerSwarm.DawnTorrent.requestQueue.addJob(parsedMsg)
-			if parsedMsg.MsgID == PieceMsg {
+			if parsedMsg.ID == PieceMsg {
 				//peerSwarm.DawnTorrent.pieceQueue.Add(parsedMsg)
-				if nByteRead != parsedMsg.MsgLen && nByteRead > 13 {
-					fmt.Printf("nByteRead bBytesRead %v, msgLen %v", nByteRead, parsedMsg.MsgLen)
+				if nByteRead != parsedMsg.Length && nByteRead > 13 {
+					fmt.Printf("nByteRead bBytesRead %v, msgLen %v", nByteRead, parsedMsg.Length)
 					//os.Exit(25)
 				}
 				peerSwarm.torrent.msgRouter(parsedMsg)
@@ -731,7 +731,7 @@ func (peer *Peer) receive(connection *net.TCPConn, peerSwarm *PeerSwarm) error {
 			}
 			//peerSwarm.DawnTorrent.msgRouter(parsedMsg)
 
-			if parsedMsg.MsgID == UnchockeMsg {
+			if parsedMsg.ID == UnchockeMsg {
 				//os.Exit(213)
 			}
 

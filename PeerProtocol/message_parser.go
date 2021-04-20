@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"math"
 	//	"strconv"
 	//"encoding/binary"
@@ -55,13 +56,16 @@ var (
 )
 
 
+type BaseMSG interface {
+	handle()
+	buildMsg(data []byte)
+}
 
 
 type MSG struct {
-	MsgID          int
-	MsgLen         int
+	ID             int
+	Length         int
 	MsgPrefixLen   int
-	field          map[string][]byte
 	PieceIndex     int
 	BeginIndex     int
 	BitfieldRaw    []byte
@@ -76,31 +80,64 @@ type MSG struct {
 	msgType        int
 }
 
+func (msg MSG) handleMsg()  {
+	fmt.Printf("not implemented yet, msg id: %v", msg.ID)
+}
+
+type HanShakeMSG struct{
+	BaseMSG
+}
+
 type ChockedMSg struct{
-	MSG
+	BaseMSG
 }
 
 type UnChockedMSg struct{
-	MSG
+	BaseMSG
 }
 
 type InterestedMSG struct{
-	MSG
+	BaseMSG
 }
 
 type UnInterestedMSG struct {
-	MSG
+	BaseMSG
 }
 
 type HaveMSG struct {
-	MSG
+	BaseMSG
 	PieceIndex int
 }
 
 type BitFieldMSG struct {
-	MSG
-	BitfieldRaw    []byte
+	BaseMSG
+	Bitfield   []byte
 }
+
+
+
+type RequestMSG struct {
+	BaseMSG
+	PieceIndex int
+	BeginIndex int
+	Length int
+}
+
+type CancelRequestMSG struct {
+	BaseMSG
+	PieceIndex int
+	BeginIndex int
+	Length int
+}
+
+type PieceMSG struct {
+	BaseMSG
+	PieceIndex int
+	BeginIndex int
+	data    []byte
+}
+
+
 
 
 type HandShakeMsg struct {
@@ -136,14 +173,14 @@ type UdpMSG struct {
 	
 }
 
-func GetMsg(msg MSG, peer *Peer) *MSG {
+func GetMsg(msg , peer *Peer) * {
 	var msgByte = make([]byte, 0)
-	msgStruct := new(MSG)
+	msgStruct := new()
 	msgStruct.Peer = peer
 	msgStruct.msgType = outgoingMsg
-	msgStruct.MsgID = msg.MsgID
+	msgStruct.ID = msg.ID
 	msgStruct.RawMsg = make([]byte, 0)
-	switch msg.MsgID {
+	switch msg.ID {
 
 	case HandShakeMsgID:
 		infoHashByte := msg.InfoHash
@@ -153,24 +190,24 @@ func GetMsg(msg MSG, peer *Peer) *MSG {
 		msgStruct.priority = JobQueue.HighPriority
 	case RequestMsg:
 
-		msgByte = bytes.Join([][]byte{intToByte(requestMsgLen, 4), intToByte(msg.MsgID, 1), intToByte(int(msg.PieceIndex), 4), intToByte(msg.BeginIndex, 4), intToByte(int(msg.PieceLen), 4)}, []byte(""))
+		msgByte = bytes.Join([][]byte{intToByte(requestMsgLen, 4), intToByte(msg.ID, 1), intToByte(int(msg.PieceIndex), 4), intToByte(msg.BeginIndex, 4), intToByte(int(msg.PieceLen), 4)}, []byte(""))
 
 		msgStruct.priority = 1
 
 	case CancelMsg:
-		msgByte = bytes.Join([][]byte{intToByte(cancelMsgLen, 4), intToByte(msg.MsgID, 1), intToByte(int(msg.PieceIndex), 4), intToByte(msg.BeginIndex, 4), intToByte(msg.PieceLen, 4)}, []byte(""))
+		msgByte = bytes.Join([][]byte{intToByte(cancelMsgLen, 4), intToByte(msg.ID, 1), intToByte(int(msg.PieceIndex), 4), intToByte(msg.BeginIndex, 4), intToByte(msg.PieceLen, 4)}, []byte(""))
 		msgStruct.priority = JobQueue.HighPriority
 
 	case PieceMsg:
-		msgByte = bytes.Join([][]byte{intToByte(pieceLen+msg.PieceLen, 4), intToByte(msg.MsgID, 1), intToByte(msg.PieceIndex, 4), intToByte(msg.BeginIndex, 4), msg.Piece}, []byte(""))
+		msgByte = bytes.Join([][]byte{intToByte(pieceLen+msg.PieceLen, 4), intToByte(msg.ID, 1), intToByte(msg.PieceIndex, 4), intToByte(msg.BeginIndex, 4), msg.Piece}, []byte(""))
 		msgStruct.priority = JobQueue.HighPriority
 
 	case HaveMsg:
-		msgByte = bytes.Join([][]byte{intToByte(5, 4), intToByte(int(msg.MsgID), 1), intToByte(int(msg.PieceIndex), 4)}, []byte(""))
+		msgByte = bytes.Join([][]byte{intToByte(5, 4), intToByte(int(msg.ID), 1), intToByte(int(msg.PieceIndex), 4)}, []byte(""))
 		msgStruct.priority = JobQueue.HighPriority
 	default:
 
-		msgByte = bytes.Join([][]byte{intToByte(1, 4), intToByte(msg.MsgID, 1)}, []byte(""))
+		msgByte = bytes.Join([][]byte{intToByte(1, 4), intToByte(msg.ID, 1)}, []byte(""))
 		msgStruct.priority = JobQueue.HighPriority
 
 	}
@@ -179,8 +216,8 @@ func GetMsg(msg MSG, peer *Peer) *MSG {
 	return msgStruct
 }
 
-func ParseMsg(msg []byte, peer *Peer) (*MSG, error) {
-	msgStruct := new(MSG)
+func ParseMsg(msg []byte, peer *Peer) (BaseMSG, error) {
+	msgStruct := MSG{}
 	msgStruct.msgType = incomingMsg
 	msgStruct.Peer = peer
 
@@ -188,21 +225,25 @@ func ParseMsg(msg []byte, peer *Peer) (*MSG, error) {
 
 	if len(msg) >= 5{
 
-	msgStruct.MsgLen =  int(binary.BigEndian.Uint32(msg[0:4]))
+	msgStruct.Length =  int(binary.BigEndian.Uint32(msg[0:4]))
 	id, _ := binary.Uvarint(msg[4:5])
 
-	msgStruct.MsgID = int(id)
+	msgStruct.ID = int(id)
 
 	msgStruct.priority = JobQueue.HighPriority
 	}else{
 		return nil, errors.New("msg is too short")
 	}
-	//fmt.Printf("MsgLen %v %v MsgID %v \n", msgStruct.MsgLen, binary.BigEndian.Uint32(msg[0:4]), msgStruct.MsgID)
+	//fmt.Printf("Length %v %v ID %v \n", msgStruct.Length, binary.BigEndian.Uint32(msg[0:4]), msgStruct.ID)
 
-	if msgStruct.MsgLen <= len(msg) {
-		switch msgStruct.MsgID {
+	if msgStruct.Length <= len(msg) {
+		switch msgStruct.ID {
 		case BitfieldMsg:
-			msgStruct.PieceLen = int(math.Abs(float64(msgStruct.MsgLen - BitFieldMsgLen)))
+			msgStruct.PieceLen = int(math.Abs(float64(msgStruct.Length - BitFieldMsgLen)))
+			bitFieldMsg := BitFieldMSG{}
+			bitFieldMsg.MSG = *msgStruct
+			return bitFieldMsg, err
+			bitFieldMsg.Bitfield = msg[5 : msgStruct.PieceLen+5]
 			msgStruct.BitfieldRaw = msg[5 : msgStruct.PieceLen+5]
 			msgStruct.priority = JobQueue.HighPriority
 		case RequestMsg:
@@ -214,9 +255,9 @@ func ParseMsg(msg []byte, peer *Peer) (*MSG, error) {
 		case PieceMsg:
 			msgStruct.PieceIndex = int(binary.BigEndian.Uint32(msg[5:9]))
 			msgStruct.BeginIndex = int(binary.BigEndian.Uint32(msg[9:13]))
-			msgStruct.PieceLen = int(math.Abs(float64(msgStruct.MsgLen - pieceLen)))
+			msgStruct.PieceLen = int(math.Abs(float64(msgStruct.Length - pieceLen)))
 			msgStruct.Piece = make([]byte, msgStruct.PieceLen)
-			//fmt.Printf("raw msg len %v, piece len %v msg len %v\n nine in uint32 %v\n", msg[0:4], msgStruct.PieceLen, msgStruct.MsgLen, pieceLen)
+			//fmt.Printf("raw msg len %v, piece len %v msg len %v\n nine in uint32 %v\n", msg[0:4], msgStruct.PieceLen, msgStruct.Length, pieceLen)
 			end := msgStruct.PieceLen + 13
 
 
@@ -233,12 +274,12 @@ func ParseMsg(msg []byte, peer *Peer) (*MSG, error) {
 			msgStruct.PieceLen = int(binary.BigEndian.Uint32(msg[13:17]))
 			msgStruct.priority = JobQueue.HighPriority
 		case UnchockeMsg:
-			println("msgStruct.MsgID unchoking")
-			println(msgStruct.MsgID)
+			println("msgStruct.ID unchoking")
+			println(msgStruct.ID)
 		case ChockedMsg:
 
-			println("msgStruct.MsgID choking")
-			println(msgStruct.MsgID)
+			println("msgStruct.ID choking")
+			println(msgStruct.ID)
 
 			// default msg -> interested,choke
 		}
@@ -250,6 +291,13 @@ func ParseMsg(msg []byte, peer *Peer) (*MSG, error) {
 
 	return msgStruct, err
 }
+
+
+
+
+
+
+
 
 func ParseHandShake(msg []byte, infoHash string) (HandShakeMsg, error) {
 	msgStruct := HandShakeMsg{}

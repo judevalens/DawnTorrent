@@ -110,7 +110,7 @@ func (torrent *Torrent) LifeCycle() {
 //	Receives msg from other peers and calls the appropriate methods
 func (torrent *Torrent) msgRouter(msg *MSG) {
 
-	switch msg.MsgID {
+	switch msg.ID {
 	case BitfieldMsg:
 		// gotta check that bitfield is the correct len
 		bitfieldCorrectLen := int(math.Ceil(float64(torrent.Downloader.nPiece) / 8.0))
@@ -169,14 +169,14 @@ func (torrent *Torrent) msgRouter(msg *MSG) {
 		torrent.PeerSwarm.peerMutex.Unlock()
 
 	case UnchockeMsg:
-		if msg.MsgLen == unChokeMsgLen {
+		if msg.Length == unChokeMsgLen {
 			torrent.PeerSwarm.peerMutex.Lock()
 			msg.Peer.peerIsChocking = false
 			torrent.PeerSwarm.peerMutex.Unlock()
 		}
 
 	case ChockedMsg:
-		if msg.MsgLen == chokeMsgLen {
+		if msg.Length == chokeMsgLen {
 			torrent.PeerSwarm.peerMutex.Lock()
 			msg.Peer.peerIsChocking = true
 			torrent.chokeCounter++
@@ -195,7 +195,7 @@ func (torrent *Torrent) msgRouter(msg *MSG) {
 		}
 
 	case HaveMsg:
-		if msg.MsgLen == haveMsgLen && msg.PieceIndex < torrent.Downloader.nPiece {
+		if msg.Length == haveMsgLen && msg.PieceIndex < torrent.Downloader.nPiece {
 			torrent.Downloader.pieceAvailabilityMutex.Lock()
 			torrent.Downloader.Pieces[msg.PieceIndex].Availability++
 			torrent.Downloader.pieceAvailabilityMutex.Unlock()

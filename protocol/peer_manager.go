@@ -79,7 +79,7 @@ func (peerSwarm *PeerSwarm) handleNewPeer(connection *net.TCPConn) {
 		/*
 			if handShakeErr == nil {
 				remotePeerAddr, _ := net.ResolveTCPAddr("tcp", connection.RemoteAddr().String())
-				handShakeMsgResponse := GetMsg(MSG{MsgID: HandShakeMsgID, InfoHash: []byte(peerSwarm.torrent.Downloader.InfoHash), MyPeerID: utils.MyID}, nil)
+				handShakeMsgResponse := GetMsg(MSG{ID: HandShakeMsgID, InfoHash: []byte(peerSwarm.torrent.Downloader.InfoHash), MyPeerID: utils.MyID}, nil)
 				_, writeErr := connection.Write(handShakeMsgResponse.RawMsg)
 				if writeErr == nil {
 					newPeer = peerSwarm.newPeerFromStrings(remotePeerAddr.IP.String(), strconv.Itoa(remotePeerAddr.Port), parsedHandShakeMsg.peerID)
@@ -92,7 +92,7 @@ func (peerSwarm *PeerSwarm) handleNewPeer(connection *net.TCPConn) {
 					PeerOperation.operation = AddActivePeer
 					peerSwarm.PeerOperation <- PeerOperation
 
-					peerSwarm.torrent.jobQueue.AddJob(GetMsg(MSG{MsgID: InterestedMsg}, newPeer))
+					peerSwarm.torrent.jobQueue.AddJob(GetMsg(MSG{ID: InterestedMsg}, newPeer))
 					_ = newPeer.receive(connection, peerSwarm)
 					PeerOperation.operation = RemovePeer
 					peerSwarm.PeerOperation <- PeerOperation
@@ -123,7 +123,7 @@ func (peerSwarm *PeerSwarm) connect(peer *Peer) {
 		_ = connection.SetKeepAlive(true)
 		_ = connection.SetKeepAlivePeriod(utils.KeepAliveDuration)
 		fmt.Printf("keep ALive %v", utils.KeepAliveDuration)
-		msg := PeerProtocol.MSG{MsgID: PeerProtocol.HandShakeMsgID, InfoHash: []byte("peerSwarm.torrent.Downloader.InfoHash"), MyPeerID: utils.MyID}
+		msg := PeerProtocol.MSG{ID: PeerProtocol.HandShakeMsgID, InfoHash: []byte("peerSwarm.torrent.Downloader.InfoHash"), MyPeerID: utils.MyID}
 		_, _ = connection.Write(PeerProtocol.GetMsg(msg, nil).RawMsg)
 
 		handshakeBytes := make([]byte, 68)
@@ -139,8 +139,8 @@ func (peerSwarm *PeerSwarm) connect(peer *Peer) {
 					PeerOperation.operation = AddActivePeer
 					PeerOperation.peer = peer
 					peerSwarm.PeerOperation <- PeerOperation
-					peerSwarm.torrent.jobQueue.AddJob(GetMsg(MSG{MsgID: UnchockeMsg}, peer))
-					peerSwarm.torrent.jobQueue.AddJob(GetMsg(MSG{MsgID: InterestedMsg}, peer))
+					peerSwarm.torrent.jobQueue.AddJob(GetMsg(MSG{ID: UnchockeMsg}, peer))
+					peerSwarm.torrent.jobQueue.AddJob(GetMsg(MSG{ID: InterestedMsg}, peer))
 					err := peer.receive(connection, peerSwarm)
 					PeerOperation.operation = RemovePeer
 					peerSwarm.PeerOperation <- PeerOperation

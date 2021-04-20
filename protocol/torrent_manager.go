@@ -105,7 +105,7 @@ func (manager *TorrentManager) runPeriodicDownloader(){
 
 func (torrent *Torrent) msgRouter(msg *PeerProtocol.MSG) {
 
-	switch msg.MsgID {
+	switch msg.ID {
 	case BitfieldMsg:
 		// gotta check that bitfield is the correct len
 		bitfieldCorrectLen := int(math.Ceil(float64(torrent.Downloader.nPiece) / 8.0))
@@ -158,20 +158,20 @@ func (torrent *Torrent) msgRouter(msg *PeerProtocol.MSG) {
 		msg.Peer.interested = true
 		torrent.PeerSwarm.peerMutex.Unlock()
 
-	case UninterestedMsg:
+	case UnInterestedMsg:
 		torrent.PeerSwarm.peerMutex.Lock()
 		msg.Peer.interested = false
 		torrent.PeerSwarm.peerMutex.Unlock()
 
 	case UnchockeMsg:
-		if msg.MsgLen == unChokeMsgLen {
+		if msg.Length == unChokeMsgLen {
 			torrent.PeerSwarm.peerMutex.Lock()
 			msg.Peer.peerIsChocking = false
 			torrent.PeerSwarm.peerMutex.Unlock()
 		}
 
 	case ChockedMsg:
-		if msg.MsgLen == chokeMsgLen {
+		if msg.Length == chokeMsgLen {
 			torrent.PeerSwarm.peerMutex.Lock()
 			msg.Peer.peerIsChocking = true
 			torrent.chokeCounter++
@@ -190,7 +190,7 @@ func (torrent *Torrent) msgRouter(msg *PeerProtocol.MSG) {
 		}
 
 	case HaveMsg:
-		if msg.MsgLen == haveMsgLen && msg.PieceIndex < torrent.Downloader.nPiece {
+		if msg.Length == haveMsgLen && msg.PieceIndex < torrent.Downloader.nPiece {
 			torrent.Downloader.pieceAvailabilityMutex.Lock()
 			torrent.Downloader.Pieces[msg.PieceIndex].Availability++
 			torrent.Downloader.pieceAvailabilityMutex.Unlock()

@@ -414,7 +414,7 @@ func NewPiece(downloader *TorrentDownloader, PieceIndex, pieceLength int, status
 
 		pendingRequest.startIndex = i * SubPieceLen
 
-		msg := MSG{MsgID: RequestMsg, PieceIndex: newPiece.PieceIndex, BeginIndex: pendingRequest.startIndex, PieceLen: newPiece.SubPieceLen}
+		msg := MSG{ID: RequestMsg, PieceIndex: newPiece.PieceIndex, BeginIndex: pendingRequest.startIndex, PieceLen: newPiece.SubPieceLen}
 
 		pendingRequest.msg = GetMsg(msg, nil)
 		pendingRequest.status = nonStartedRequest
