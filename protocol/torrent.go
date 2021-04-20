@@ -148,7 +148,7 @@ type Piece struct {
 	subPieceMask        []byte
 	pieceStartIndex     int
 	pieceEndIndex       int
-	position            []pos
+	position            []int
 	pendingRequestMutex *sync.RWMutex
 
 	nSubPiece           int

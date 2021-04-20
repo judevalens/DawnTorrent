@@ -30,11 +30,11 @@ type Peer struct {
 }
 
 
-func (peerSwarm *PeerSwarm) NewPeer(dict *parser.BMap) *Peer {
+func  NewPeer(ip, port, id string) *Peer {
 	newPeer := new(Peer)
-	newPeer.id = dict.Strings["peer id"]
-	newPeer.port = dict.Strings["port"]
-	newPeer.ip = dict.Strings["ip"]
+	newPeer.id =id
+	newPeer.port = port
+	newPeer.ip = ip
 	newPeer.peerIsChocking = true
 	newPeer.interested = false
 	newPeer.chocked = true
@@ -42,10 +42,10 @@ func (peerSwarm *PeerSwarm) NewPeer(dict *parser.BMap) *Peer {
 	newPeer.isFree = true
 	return newPeer
 }
-func (peerSwarm *PeerSwarm) newPeerFromBytes(peer []byte) (string, string, string) {
+func  NewPeerFromBytes(peerData []byte) *Peer {
 	newPeer := new(Peer)
 
-	ipByte := peer[0:4]
+	ipByte := peerData[0:4]
 
 	ipString := ""
 	for i := range ipByte {
@@ -64,17 +64,10 @@ func (peerSwarm *PeerSwarm) newPeerFromBytes(peer []byte) (string, string, strin
 		}
 	}
 
-	portBytes := binary.BigEndian.Uint16(peer[4:6])
+	portBytes := binary.BigEndian.Uint16(peerData[4:6])
 
-	return ipString, strconv.FormatUint(uint64(portBytes), 10), ipString + ":" + newPeer.port
+	return NewPeer(ipString,strconv.FormatUint(uint64(portBytes), 10),ipString + ":" + newPeer.port)
 }
-func (peerSwarm *PeerSwarm) newPeerFromStrings(peerIp, peerPort, peerID string) *Peer {
-	peerDict := new(parser.BMap)
-	peerDict.Strings = make(map[string]string)
-	peerDict.Strings["ip"] = peerIp
-	peerDict.Strings["port"] = peerPort
-	peerDict.Strings["peer id"] = peerID
-	newPeer := peerSwarm.NewPeer(peerDict)
-	return newPeer
-
+func NewPeerFromMap(peerData *parser.BMap) *Peer{
+	return NewPeer(peerData.Strings["ip"], peerData.Strings["port"],peerData.Strings["peer id"])
 }

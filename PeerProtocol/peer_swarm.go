@@ -155,7 +155,6 @@ func (peerSwarm *PeerSwarm) connect(peer *Peer) {
 				peerOperation.operation = AddActivePeer
 				peerOperation.peer = peer
 				peerSwarm.peerOperation <- peerOperation
-				os.Exit(21)
 				peerSwarm.torrent.jobQueue.AddJob(GetMsg(MSG{MsgID: UnchockeMsg}, peer))
 				peerSwarm.torrent.jobQueue.AddJob(GetMsg(MSG{MsgID: InterestedMsg}, peer))
 				err := peer.receive(connection, peerSwarm)

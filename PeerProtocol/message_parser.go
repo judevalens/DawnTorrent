@@ -54,6 +54,9 @@ var (
 	maxPiece               byte
 )
 
+
+
+
 type MSG struct {
 	MsgID          int
 	MsgLen         int
@@ -72,6 +75,33 @@ type MSG struct {
 	priority       int
 	msgType        int
 }
+
+type ChockedMSg struct{
+	MSG
+}
+
+type UnChockedMSg struct{
+	MSG
+}
+
+type InterestedMSG struct{
+	MSG
+}
+
+type UnInterestedMSG struct {
+	MSG
+}
+
+type HaveMSG struct {
+	MSG
+	PieceIndex int
+}
+
+type BitFieldMSG struct {
+	MSG
+	BitfieldRaw    []byte
+}
+
 
 type HandShakeMsg struct {
 	MsgID              int
