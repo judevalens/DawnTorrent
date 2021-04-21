@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
-	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -28,9 +27,12 @@ const (
 
 type TorrentManager struct {
 	torrent            *Torrent
-	peerSwam           *PeerSwarm
+	peerSwam           *peerManager
 	trackerRequestChan *time.Ticker
 	stopTrackerRequest chan interface{}
+	msgPipeline        chan BaseMSG
+	stopMsgPipeLine    chan interface{}
+	msgChan            chan BaseMSG
 	torrentState       int
 	uploaded           int
 	totalDownloaded    int
@@ -38,7 +40,12 @@ type TorrentManager struct {
 	stateChan          chan int
 	state              int
 	trackerType        int
+	trackerState trackerRequestState
+	trackerTimer 	*time.Timer
+
 }
+
+
 
 func (manager TorrentManager) init() {
 
@@ -48,8 +55,19 @@ func (manager TorrentManager) init() {
 		switch manager.state {
 		case started:
 			go manager.runPeriodicTracker(manager.trackerType)
+			go manager.msgRouter()
+			go manager.peerSwam.launchPeerOperation()
+
+			manager.peerSwam.peerOperation <- startServer{
+				swarm: manager.peerSwam,
+			}
+
 			manager.trackerRequestChan = time.NewTicker(time.Nanosecond)
 		case stopped:
+			manager.trackerRequestChan.Stop()
+			manager.peerSwam.peerOperation <- stopServer{
+				swarm: manager.peerSwam,
+			}
 			manager.trackerRequestChan.Stop()
 		case completed:
 			//TODO do something !
@@ -58,7 +76,7 @@ func (manager TorrentManager) init() {
 
 }
 
-func (manager *TorrentManager) runTracker(trackerType int) {
+func (manager *TorrentManager) runTracker(trackerType int) (int,error){
 	var peers []*Peer
 	if trackerType == httpTracker {
 		trackerResponse, err := manager.sendHTTPTrackerRequest(1, 0, 0, 0, "", "")
@@ -71,7 +89,7 @@ func (manager *TorrentManager) runTracker(trackerType int) {
 	} else {
 
 		trackerResponse, err := manager.sendUDPTrackerRequest(1)
-		if err != nil{
+		if err != nil {
 			log.Fatal(err)
 		}
 		peers = manager.createPeersFromUDPTracker(trackerResponse.PeersAddresses)
@@ -91,21 +109,39 @@ func (manager *TorrentManager) runTracker(trackerType int) {
 func (manager *TorrentManager) runPeriodicTracker(trackerType int, ) {
 	println("sending to tracker ................")
 
+	periodicChan := make(chan time.Time)
+
+
+	go func() {
+		for {
+			<-periodicChan
+			manager.runTracker(trackerType)
+
+		}
+	}()
+
+	manager.trackerRequestChan = time.NewTicker(time.Nanosecond)
+
+}
+
+func (manager *TorrentManager) runPeriodicDownloader() {
+
+}
+
+func (manager *TorrentManager) msgRouter() {
+
 	for {
-		<-manager.trackerRequestChan.C
-		manager.runTracker(trackerType)
+
+		select {
+		case msg := <-manager.msgChan:
+			msg.handle()
+		case <-manager.stopMsgPipeLine:
+			return
+		}
 
 	}
 
-}
-
-func (manager *TorrentManager) runPeriodicDownloader(){
-
-}
-
-func (torrent *Torrent) msgRouter(msg *PeerProtocol.MSG) {
-
-	switch msg.ID {
+	/*switch msg.ID {
 	case BitfieldMsg:
 		// gotta check that bitfield is the correct len
 		bitfieldCorrectLen := int(math.Ceil(float64(torrent.Downloader.nPiece) / 8.0))
@@ -124,15 +160,15 @@ func (torrent *Torrent) msgRouter(msg *PeerProtocol.MSG) {
 					bit := currentByte & currentBit
 
 					isPieceAvailable := bit != 0
-					torrent.PeerSwarm.peerMutex.Lock()
+					torrent.peerManager.peerMutex.Lock()
 
 					//TODO if a peer is removed, it is a problem if we try to access it
 					// need to add verification that the peer is still in the map
-					peer, isPresent := torrent.PeerSwarm.PeersMap.Get(msg.Peer.id)
+					peer, isPresent := torrent.peerManager.PeersMap.Get(msg.Peer.id)
 					if isPresent {
 						peer.(*Peer).AvailablePieces[pieceIndex] = isPieceAvailable
 					}
-					torrent.PeerSwarm.peerMutex.Unlock()
+					torrent.peerManager.peerMutex.Unlock()
 
 					// if piece available we put in the sorted map
 
@@ -154,29 +190,29 @@ func (torrent *Torrent) msgRouter(msg *PeerProtocol.MSG) {
 		torrent.Downloader.SortPieceByAvailability()
 
 	case InterestedMsg:
-		torrent.PeerSwarm.peerMutex.Lock()
+		torrent.peerManager.peerMutex.Lock()
 		msg.Peer.interested = true
-		torrent.PeerSwarm.peerMutex.Unlock()
+		torrent.peerManager.peerMutex.Unlock()
 
 	case UnInterestedMsg:
-		torrent.PeerSwarm.peerMutex.Lock()
+		torrent.peerManager.peerMutex.Lock()
 		msg.Peer.interested = false
-		torrent.PeerSwarm.peerMutex.Unlock()
+		torrent.peerManager.peerMutex.Unlock()
 
 	case UnchockeMsg:
 		if msg.Length == unChokeMsgLen {
-			torrent.PeerSwarm.peerMutex.Lock()
+			torrent.peerManager.peerMutex.Lock()
 			msg.Peer.peerIsChocking = false
-			torrent.PeerSwarm.peerMutex.Unlock()
+			torrent.peerManager.peerMutex.Unlock()
 		}
 
 	case ChockedMsg:
 		if msg.Length == chokeMsgLen {
-			torrent.PeerSwarm.peerMutex.Lock()
+			torrent.peerManager.peerMutex.Lock()
 			msg.Peer.peerIsChocking = true
 			torrent.chokeCounter++
 
-			torrent.PeerSwarm.peerMutex.Unlock()
+			torrent.peerManager.peerMutex.Unlock()
 
 		}
 	case PieceMsg:
@@ -199,9 +235,8 @@ func (torrent *Torrent) msgRouter(msg *PeerProtocol.MSG) {
 		}
 
 	}
-
+	*/
 }
-
 
 func (manager *TorrentManager) sendHTTPTrackerRequest(state int, uploaded, totalDownloaded, left int, infoHash string, announcerURL string) (*parser.BMap, error) {
 
@@ -391,6 +426,3 @@ func (manager *TorrentManager) createPeersFromUDPTracker(peersAddress []byte) []
 
 	return peers
 }
-
-
-

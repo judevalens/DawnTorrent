@@ -4,13 +4,13 @@ import "net"
 
 
 
-type PeerOperation2 interface {
+type PeerOperation interface {
 	execute()
 }
 
 type addPeerOperation struct {
 	peer *Peer
-	swarm *PeerSwarm
+	swarm *peerManager
 }
 
 func(operation addPeerOperation) execute(){
@@ -19,7 +19,7 @@ func(operation addPeerOperation) execute(){
 
 type dropPeerOperation struct {
 	peer *Peer
-	swarm *PeerSwarm
+	swarm *peerManager
 }
 
 func (operation dropPeerOperation) execute() {
@@ -28,7 +28,7 @@ func (operation dropPeerOperation) execute() {
 
 type IncommingPeerConnection struct {
 	conn *net.TCPConn
-	swarm *PeerSwarm
+	swarm *peerManager
 }
 
 func (operation IncommingPeerConnection) execute() {
@@ -37,7 +37,7 @@ func (operation IncommingPeerConnection) execute() {
 
 type connectPeerOperation struct {
 	peer *Peer
-	swarm *PeerSwarm
+	swarm *peerManager
 }
 
 func (operation connectPeerOperation) execute() {
@@ -45,18 +45,18 @@ func (operation connectPeerOperation) execute() {
 }
 
 type startServer struct {
-	swarm *PeerSwarm
+	swarm *peerManager
 }
 
-func (operation connectPeerOperation) receiveIncomingConnection() {
-	operation.swarm.startServer()
+func (operation startServer) execute() {
+	go operation.swarm.startServer()
 }
 
-type stopSever struct {
-	swarm *PeerSwarm
+type stopServer struct {
+	swarm *peerManager
 }
 
-func (operation connectPeerOperation) stopIncomingConnection() {
+func (operation stopServer) execute() {
 	operation.swarm.stopServer()
 }
 

@@ -31,7 +31,7 @@ const (
 
 
 
-type PeerSwarm struct {
+type peerManager struct {
 	activePeers                 map[string]*Peer
 	Peers                       []*Peer
 	PeersMap                    map[string]*Peer
@@ -40,15 +40,12 @@ type PeerSwarm struct {
 	interestingPeer             map[string]*Peer
 	unChockedPeer               []*Peer
 	unChockedPeerMap            map[string]*Peer
-	peerMutex                   *sync.RWMutex
-	interestingPeerMutex        sync.Mutex
-	activeConnectionMutex       *sync.RWMutex
-	activeConnection            *hashmap.Map
+
 	nActiveConnection           int
 	maxConnection               int
 	torrent                     *Torrent
 	trackerInterval             int
-	peerOperation               chan PeerOperation2
+	peerOperation               chan PeerOperation
 	lastSelectedPeer            int
 	trackerRequestChan          time.Ticker
 	initialTrackerRequest       chan interface{}
@@ -57,14 +54,20 @@ type PeerSwarm struct {
 	server                      *net.TCPListener
 }
 
-func (peerSwarm *PeerSwarm) addPeer(peer *Peer) *Peer {
+func newPeerManager() peerManager{
+	peerManager := peerManager{}
+
+	return peerManager
+}
+
+func (peerSwarm *peerManager) addPeer(peer *Peer) *Peer {
 	peerSwarm.PeersMap[peer.id] = peer
 	// TODO That's probably redundant
 	peerSwarm.Peers = append(peerSwarm.Peers, peer)
 	peer.peerIndex = len(peerSwarm.Peers) - 1
 	return peer
 }
-func (peerSwarm *PeerSwarm) handleNewPeer(connection *net.TCPConn) {
+func (peerSwarm *peerManager) handleNewPeer(connection *net.TCPConn) {
 	//var newPeer *Peer
 	_ = connection.SetKeepAlive(true)
 	_ = connection.SetKeepAlivePeriod(utils.KeepAliveDuration)
@@ -114,7 +117,7 @@ func (peerSwarm *PeerSwarm) handleNewPeer(connection *net.TCPConn) {
 
 }
 
-func (peerSwarm *PeerSwarm) connect(peer *Peer) {
+func (peerSwarm *peerManager) connect(peer *Peer) {
 
 	remotePeerAddr, _ := net.ResolveTCPAddr("tcp", peer.ip+":"+peer.port)
 	connection, connectionErr := net.DialTCP("tcp", nil, remotePeerAddr)
@@ -153,7 +156,7 @@ func (peerSwarm *PeerSwarm) connect(peer *Peer) {
 		//fmt.Printf("connection failed \n")
 	}
 }
-func (peerSwarm *PeerSwarm) DropConnection(peer *Peer) {
+func (peerSwarm *peerManager) DropConnection(peer *Peer) {
 	/*
 		peer.connection = nil
 		peerSwarm.activeConnection.Remove(peer.id)
@@ -178,7 +181,7 @@ func (peerSwarm *PeerSwarm) DropConnection(peer *Peer) {
 	*/
 }
 
-func (peerSwarm *PeerSwarm) startServer() {
+func (peerSwarm *peerManager) startServer() {
 	server, err := net.ListenTCP("tcp", utils.LocalAddr2)
 	peerSwarm.server = server
 	//fmt.Printf("Listening on %v\n", server.Addr().String())
@@ -195,7 +198,8 @@ func (peerSwarm *PeerSwarm) startServer() {
 				}
 
 			} else {
-				log.Fatalf("error: %v", err)
+				log.Printf("new err: %v", err)
+				return
 
 			}
 
@@ -206,7 +210,7 @@ func (peerSwarm *PeerSwarm) startServer() {
 	}
 }
 
-func (peerSwarm *PeerSwarm) stopServer() {
+func (peerSwarm *peerManager) stopServer() {
 	if peerSwarm.server != nil {
 		err := peerSwarm.server.Close()
 		if err != nil {
@@ -216,7 +220,7 @@ func (peerSwarm *PeerSwarm) stopServer() {
 	}
 }
 
-func (peerSwarm *PeerSwarm) peersManager() {
+func (peerSwarm *peerManager) launchPeerOperation() {
 
 	for {
 		operation := <-peerSwarm.peerOperation
