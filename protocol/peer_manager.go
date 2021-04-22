@@ -5,14 +5,12 @@ import (
 	_ "DawnTorrent/parser"
 	"DawnTorrent/utils"
 	"fmt"
-	"github.com/emirpasic/gods/maps/hashmap"
 	"io"
 	"log"
 	"net"
 	_ "net"
 	_ "os"
 	_ "strconv"
-	"sync"
 	"time"
 )
 
@@ -45,7 +43,7 @@ type peerManager struct {
 	maxConnection               int
 	torrent                     *Torrent
 	trackerInterval             int
-	peerOperation               chan PeerOperation
+	peerOperationReceiver       chan PeerOperation
 	lastSelectedPeer            int
 	trackerRequestChan          time.Ticker
 	initialTrackerRequest       chan interface{}
@@ -126,8 +124,8 @@ func (peerSwarm *peerManager) connect(peer *Peer) {
 		_ = connection.SetKeepAlive(true)
 		_ = connection.SetKeepAlivePeriod(utils.KeepAliveDuration)
 		fmt.Printf("keep ALive %v", utils.KeepAliveDuration)
-		msg := PeerProtocol.MSG{ID: PeerProtocol.HandShakeMsgID, InfoHash: []byte("peerSwarm.torrent.Downloader.InfoHash"), MyPeerID: utils.MyID}
-		_, _ = connection.Write(PeerProtocol.GetMsg(msg, nil).RawMsg)
+		_ = PeerProtocol.MSG{ID: PeerProtocol.HandShakeMsgID, InfoHash: []byte("peerSwarm.torrent.Downloader.InfoHash"), MyPeerID: utils.MyID}
+		//_, _ = connection.Write(PeerProtocol.GetMsg(msg, nil).RawMsg)
 
 		handshakeBytes := make([]byte, 68)
 		_, readErr := io.ReadFull(connection, handshakeBytes)
@@ -192,7 +190,7 @@ func (peerSwarm *peerManager) startServer() {
 			connection, connErr = server.AcceptTCP()
 			if connErr == nil {
 
-				peerSwarm.peerOperation <- IncommingPeerConnection{
+				peerSwarm.peerOperationReceiver <- IncomingPeerConnection{
 					swarm: peerSwarm,
 					conn:  connection,
 				}
@@ -220,10 +218,10 @@ func (peerSwarm *peerManager) stopServer() {
 	}
 }
 
-func (peerSwarm *peerManager) launchPeerOperation() {
+func (peerSwarm *peerManager) receiveOperation() {
 
 	for {
-		operation := <-peerSwarm.peerOperation
+		operation := <-peerSwarm.peerOperationReceiver
 
 		operation.execute()
 
@@ -259,7 +257,7 @@ func (peerSwarm *peerManager) launchPeerOperation() {
 				}
 			}
 
-			println("requesting tracker ...........")
+			println("requesting baseTracker ...........")
 			if availablePeer == nil && len(peerSwarm.PeerSorter.activePeers) < 2 {
 				peerSwarm.torrent.LifeCycleChannel <- sendTrackerRequest
 			}

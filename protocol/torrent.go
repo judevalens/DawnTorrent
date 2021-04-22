@@ -15,6 +15,8 @@ const (
 	MultipleFile = iota
 )
 
+
+
 const(
 	NotStarted = iota
 	InProgress = iota
@@ -41,6 +43,10 @@ type Torrent struct {
 	Name               string
 	PieceHolder        []*byte
 	PieceSelectionMode int
+}
+
+func newTorrent(path string) Torrent{
+	return Torrent{}
 }
 
 type fileMetadata struct {

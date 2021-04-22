@@ -49,7 +49,7 @@ var (
 
 
 type BaseMSG interface {
-	handle()
+	handleRequest()
 }
 
 
@@ -58,7 +58,7 @@ type MSG struct {
 	Length         int
 }
 
-func (msg MSG) handle() {
+func (msg MSG) handleRequest() {
 	panic("implement me")
 }
 

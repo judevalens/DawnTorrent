@@ -14,8 +14,7 @@ type addPeerOperation struct {
 }
 
 func(operation addPeerOperation) execute(){
-	operation.swarm.addPeer(operation.peer)
-}
+ }
 
 type dropPeerOperation struct {
 	peer *Peer
@@ -26,12 +25,12 @@ func (operation dropPeerOperation) execute() {
 	operation.swarm.DropConnection(operation.peer)
 }
 
-type IncommingPeerConnection struct {
+type IncomingPeerConnection struct {
 	conn *net.TCPConn
 	swarm *peerManager
 }
 
-func (operation IncommingPeerConnection) execute() {
+func (operation IncomingPeerConnection) execute() {
 	operation.swarm.handleNewPeer(operation.conn)
 }
 
