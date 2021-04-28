@@ -18,7 +18,7 @@ type TorrentManager struct {
 	totalDownloaded int
 	left            int
 	stateChan       chan int
-	tracker         baseTracker
+	tracker         tracker
 	state int
 
 }
@@ -27,12 +27,12 @@ func newTorrentManager(torrentPath string)  {
 	manager := TorrentManager{}
 	manager.torrent = newTorrent(torrentPath)
 	manager.peerManager = newPeerManager()
+	manager.tracker = newTracker(manager.torrent.AnnouncerUrl,manager.torrent.InfoHashHex,manager.peerManager)
 	manager.msgChan = make(chan BaseMSG)
 	manager.stopMsgPipeLine = make(chan interface{})
 	manager.torrentState = stopped
 	manager.stateChan = make(chan int)
 }
-
 
 func(manager TorrentManager) createTracker(){
 
@@ -47,7 +47,7 @@ func (manager TorrentManager) init() {
 		case started:
 			go manager.msgRouter()
 			go manager.peerManager.receiveOperation()
-
+			go manager.tracker.starTracker()
 			manager.peerManager.peerOperationReceiver <- startServer{
 				swarm: &manager.peerManager,
 			}
@@ -62,7 +62,6 @@ func (manager TorrentManager) init() {
 	}
 
 }
-
 
 func (manager *TorrentManager) runPeriodicDownloader() {
 

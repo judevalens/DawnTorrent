@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"time"
 )
+
 const (
 	httpTracker = iota
 	udpTracker  = iota
@@ -20,7 +21,7 @@ const (
 
 const (
 	httpScheme = "http"
-	udpScheme = "udp"
+	udpScheme  = "udp"
 )
 
 type tracker interface {
@@ -29,22 +30,23 @@ type tracker interface {
 	getAnnouncerUrl() *url.URL
 	getInfoHash() string
 	getTransferStats() (int, int, int)
+	starTracker()
+	stopTracker()
+	resetTracker(duration time.Duration)
 }
-
 
 type baseTracker struct {
-	state             trackerRequestState
-	trackerURL      			*url.URL
-	interval          time.Duration
-	timer             *time.Timer
-	peerManager 		peerManager
+	state       trackerRequestState
+	infoHash string
+	trackerURL  *url.URL
+	interval    time.Duration
+	timer       *time.Timer
+	peerManager peerManager
 }
 
-
-
-func newTracker(announcerUrlString string, peerManager peerManager) tracker {
+func newTracker(announcerUrlString ,infoHash string, peerManager peerManager) tracker {
 	var tracker tracker
-	trackerURL,err := url.Parse(announcerUrlString)
+	trackerURL, err := url.Parse(announcerUrlString)
 
 	if err != nil {
 		return nil
@@ -52,22 +54,22 @@ func newTracker(announcerUrlString string, peerManager peerManager) tracker {
 
 	baseTracker := baseTracker{
 		peerManager: peerManager,
-		trackerURL: trackerURL,
-		timer: time.NewTimer(time.Nanosecond),
+		infoHash: infoHash,
+		trackerURL:  trackerURL,
+		timer:       time.NewTimer(time.Nanosecond),
 	}
 
-
-	if trackerURL.Scheme == httpScheme{
+	if trackerURL.Scheme == httpScheme {
 		tracker = httpTracker2{
 			baseTracker: baseTracker,
 		}
-	}else{
+	} else {
 		tracker = udpTracker2{
 			baseTracker: baseTracker,
 		}
 	}
 
-return tracker
+	return tracker
 }
 
 func (t baseTracker) handleRequest() (int, error) {
@@ -100,8 +102,6 @@ func (t baseTracker) stopTracker() {
 func (t baseTracker) resetTracker(duration time.Duration) {
 	t.state.reset(duration)
 }
-
-
 
 type trackerRequestState interface {
 	handle()
@@ -160,8 +160,6 @@ func (r recurringRequest) reset(duration time.Duration) {
 	r.tracker.timer.Reset(duration)
 }
 
-
-
 type httpTracker2 struct {
 	baseTracker
 }
@@ -186,7 +184,6 @@ func (trp httpTracker2) execRequest() (*parser.BMap, error) {
 
 	trackerUrl := trp.getAnnouncerUrl()
 	trackerUrl.RawQuery = trackerRequestParam.Encode()
-
 
 	fmt.Printf("\n Param \n %v \n", trackerUrl)
 

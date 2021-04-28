@@ -15,16 +15,14 @@ const (
 	MultipleFile = iota
 )
 
-
-
-const(
+const (
 	NotStarted = iota
 	InProgress = iota
-	Completed = iota
+	Completed  = iota
 )
 
 type Torrent struct {
-	Announce           string
+	AnnouncerUrl       string
 	AnnounceList       []string
 	Comment            string
 	CreatedBy          string
@@ -45,7 +43,7 @@ type Torrent struct {
 	PieceSelectionMode int
 }
 
-func newTorrent(path string) Torrent{
+func newTorrent(path string) Torrent {
 	return Torrent{}
 }
 
@@ -68,7 +66,7 @@ func createNewTorrent(torrentMap *parser.BMap) *Torrent {
 
 	torrentFile.infoHashByte = infoHashByte
 	torrentFile.InfoHashHex = hexInfoHash
-	torrentFile.Announce = torrentMap.Strings["announce"]
+	torrentFile.AnnouncerUrl = torrentMap.Strings["announce"]
 
 	torrentFile.AnnounceList = make([]string, 0)
 	torrentFile.AnnounceList = torrentMap.BLists["announce-list"].Strings
@@ -120,7 +118,7 @@ func createFileProperties(fileProperties []fileMetadata, filePath string, fileLe
 	return torrent
 }
 
-// calculates the info hash based on pieces provided in the .torrent file
+// GetInfoHash calculates the info hash based on pieces provided in the .torrent file
 func GetInfoHash(dict *parser.BMap) ([20]byte, string) {
 
 	// InnerStartingPosition leaves out the key
@@ -157,8 +155,8 @@ type Piece struct {
 	position            []int
 	pendingRequestMutex *sync.RWMutex
 
-	nSubPiece           int
-	AvailabilityIndex   int
+	nSubPiece         int
+	AvailabilityIndex int
 }
 
 //	Creates a Piece object and initialize subPieceRequest for this piece

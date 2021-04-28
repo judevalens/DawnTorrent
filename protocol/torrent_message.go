@@ -1,6 +1,8 @@
 package protocol
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 )
 
@@ -28,6 +30,10 @@ const (
 	outgoingMsg    = -1
 )
 
+const (
+	handShakeLen = 58
+)
+
 var (
 	keepALiveMsgLen        int = 0
 	BitFieldMsgLen         int = 1
@@ -40,8 +46,8 @@ var (
 	cancelMsgLen           int = 13
 	pieceLen               int = 9
 	portMsgLen                 = []byte{0, 0, 0, 3}
-	HandShakePrefixLength      = []byte{19}
-	ProtocolIdentifier         = []byte("BitTorrent protocol")
+	HandShakePrefixLength      = 19
+	BittorrentIdentifier       = "BitTorrent protocol"
 	BitTorrentReservedByte     = []byte{0, 0, 0, 0, 0, 0, 0, 0}
 	MaxMsgSize                 = 2000
 	maxPiece               byte
@@ -50,12 +56,50 @@ var (
 
 type BaseMSG interface {
 	handleRequest()
+	marshal() []byte
 }
 
 
 type MSG struct {
 	ID             int
 	Length         int
+}
+
+type HandShake struct {
+	pstrlen string
+	pstr string
+	infoHash string
+	reservedBytes []byte
+	peerID string
+}
+
+func newHandShakeMsg(infohash string, peerID string) []byte  {
+	msg := HandShake{
+		infoHash: infohash,
+	}
+	return msg.marshal()
+}
+
+func(h HandShake) marshal() []byte {
+	return bytes.Join([][]byte{{byte(HandShakePrefixLength)}, []byte(BittorrentIdentifier), BitTorrentReservedByte, []byte(h.infoHash), []byte(h.peerID)}, []byte(""))
+}
+func(h HandShake) handleRequest() {
+}
+
+func parseHandShake(data []byte)  (*HandShake,error){
+	if len(data) < handShakeLen{
+		return nil,errors.New("could not parse msg")
+	}
+
+	handShakeMsg := new(HandShake)
+
+	handShakeMsg.pstrlen = string(data[0:1])
+	handShakeMsg.pstr = string(data[1:len(BittorrentIdentifier)])
+	handShakeMsg.reservedBytes = data[len(BittorrentIdentifier):len(BittorrentIdentifier)+8]
+	handShakeMsg.reservedBytes = data[len(BittorrentIdentifier)+8:len(BittorrentIdentifier)+28]
+	handShakeMsg.reservedBytes = data[len(BittorrentIdentifier)+28:len(BittorrentIdentifier)+48]
+	return handShakeMsg,nil
+
 }
 
 func (msg MSG) handleRequest() {
@@ -117,35 +161,37 @@ type PieceMSG struct {
 	data    []byte
 }
 
-func newBitfieldMSG(data []byte, baseMSg BaseMSG) (BitfieldMSG,error){
+
+
+func parseBitfieldMSG(data []byte, baseMSg BaseMSG) (BitfieldMSG,error){
 	return BitfieldMSG{},nil
 }
 
 
-func newChockedMSg(data []byte, baseMSg BaseMSG) (ChockedMSg,error){
+func parseChockedMSg(data []byte, baseMSg BaseMSG) (ChockedMSg,error){
 	return ChockedMSg{},nil
 }
 
-func newUnChockedMSg(data []byte, baseMSg BaseMSG) (UnChockedMSg,error){
+func parseUnChockedMSg(data []byte, baseMSg BaseMSG) (UnChockedMSg,error){
 	return UnChockedMSg{},nil
 }
-func newInterestedMSG(data []byte, baseMSg BaseMSG) (InterestedMSG,error){
+func parseInterestedMSG(data []byte, baseMSg BaseMSG) (InterestedMSG,error){
 	return InterestedMSG{},nil
 }
 
-func newUnInterestedMSG(data []byte, baseMSg BaseMSG) (UnInterestedMSG,error){
+func parseUnInterestedMSG(data []byte, baseMSg BaseMSG) (UnInterestedMSG,error){
 	return UnInterestedMSG{},nil
 }
 
-func newHaveMSG(data []byte, baseMSg BaseMSG) (HaveMSG,error){
+func parseHaveMSG(data []byte, baseMSg BaseMSG) (HaveMSG,error){
 	return HaveMSG{},nil
 }
-func newRequestMSG(data []byte, baseMSg BaseMSG) (RequestMSG,error)  {
+func parseRequestMSG(data []byte, baseMSg BaseMSG) (RequestMSG,error)  {
 	return RequestMSG{},nil
 }
-func newCancelRequestMSG(data []byte, baseMSg BaseMSG) (CancelRequestMSG,error)  {
+func parseCancelRequestMSG(data []byte, baseMSg BaseMSG) (CancelRequestMSG,error)  {
 	return CancelRequestMSG{},nil
 }
-func newPieceMSG(data []byte, baseMSg BaseMSG) (PieceMSG,error)  {
+func parsePieceMSG(data []byte, baseMSg BaseMSG) (PieceMSG,error)  {
 	return PieceMSG{},nil
 }

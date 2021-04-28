@@ -131,6 +131,7 @@ func (peerSwarm *PeerSwarm) Listen() {
 
 	}
 }
+
 func (peerSwarm *PeerSwarm) connect(peer *Peer) {
 
 	remotePeerAddr, _ := net.ResolveTCPAddr("tcp", peer.ip+":"+peer.port)

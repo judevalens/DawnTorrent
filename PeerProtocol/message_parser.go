@@ -292,13 +292,6 @@ func ParseMsg(msg []byte, peer *Peer) (BaseMSG, error) {
 	return msgStruct, err
 }
 
-
-
-
-
-
-
-
 func ParseHandShake(msg []byte, infoHash string) (HandShakeMsg, error) {
 	msgStruct := HandShakeMsg{}
 	var err error = nil

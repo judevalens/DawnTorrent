@@ -30,6 +30,7 @@ const (
 
 
 type peerManager struct {
+	torrentManager *TorrentManager
 	activePeers                 map[string]*Peer
 	Peers                       []*Peer
 	PeersMap                    map[string]*Peer
@@ -116,40 +117,39 @@ func (peerSwarm *peerManager) handleNewPeer(connection *net.TCPConn) {
 }
 
 func (peerSwarm *peerManager) connect(peer *Peer) {
-
+	var err error
 	remotePeerAddr, _ := net.ResolveTCPAddr("tcp", peer.ip+":"+peer.port)
-	connection, connectionErr := net.DialTCP("tcp", nil, remotePeerAddr)
+	connection, err := net.DialTCP("tcp", nil, remotePeerAddr)
 	fmt.Printf("peer addr : %v, con %v\n", remotePeerAddr.String(), connection)
-	if connectionErr == nil {
+	if err == nil {
 		_ = connection.SetKeepAlive(true)
 		_ = connection.SetKeepAlivePeriod(utils.KeepAliveDuration)
 		fmt.Printf("keep ALive %v", utils.KeepAliveDuration)
-		_ = PeerProtocol.MSG{ID: PeerProtocol.HandShakeMsgID, InfoHash: []byte("peerSwarm.torrent.Downloader.InfoHash"), MyPeerID: utils.MyID}
-		//_, _ = connection.Write(PeerProtocol.GetMsg(msg, nil).RawMsg)
+		_, err := connection.Write(newHandShakeMsg(peerSwarm.torrent.InfoHashHex, ""))
 
+		if err != nil{
+			log.Fatal(err)
+		}
 		handshakeBytes := make([]byte, 68)
-		_, readErr := io.ReadFull(connection, handshakeBytes)
-		_ = readErr
-		/*
-			if readErr == nil {
-				_, handShakeErr := ParseHandShake(handshakeBytes, peerSwarm.torrent.Downloader.InfoHash)
-				if handShakeErr == nil {
+		_, err = io.ReadFull(connection, handshakeBytes)
+
+			if err == nil {
+				handShakeMsg, handShakeMsgErr := parseHandShake(handshakeBytes)
+
+				if handShakeMsgErr != nil{
+					log.Fatal(handShakeMsgErr)
+				}
+
+				if handShakeMsg.infoHash != peerSwarm.torrent.InfoHashHex{
+					return
+				}
 
 					peer.connection = connection
-					PeerOperation := new(PeerOperation)
-					PeerOperation.operation = AddActivePeer
-					PeerOperation.peer = peer
-					peerSwarm.PeerOperation <- PeerOperation
-					peerSwarm.torrent.jobQueue.AddJob(GetMsg(MSG{ID: UnchockeMsg}, peer))
-					peerSwarm.torrent.jobQueue.AddJob(GetMsg(MSG{ID: InterestedMsg}, peer))
-					err := peer.receive(connection, peerSwarm)
-					PeerOperation.operation = RemovePeer
-					peerSwarm.PeerOperation <- PeerOperation
-					fmt.Printf("\nconnec err %v\n", err)
-					/////os.Exit(22)
-
-				}
-			}*/
+					peerSwarm.peerOperationReceiver <- addPeerOperation{
+						peer:  peer,
+						swarm: peerSwarm,
+					}
+			}
 	} else {
 		//fmt.Printf("connection failed \n")
 	}
