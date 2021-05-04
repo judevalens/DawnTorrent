@@ -14,6 +14,15 @@ type addPeerOperation struct {
 }
 
 func(operation addPeerOperation) execute(){
+
+	// for now, we set no limit on the max connections allowed
+	operation.swarm.activePeers[operation.peer.id] = operation.peer
+	go func() {
+		err := operation.peer.receive(nil, nil)
+		if err != nil {
+
+		}
+	}();
  }
 
 type dropPeerOperation struct {

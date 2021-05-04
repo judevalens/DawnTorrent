@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"math"
 	//	"strconv"
 	//"encoding/binary"
 )
@@ -173,13 +172,11 @@ type UdpMSG struct {
 	
 }
 
-func GetMsg(msg , peer *Peer) * {
+func GetMsg(msg MSG, peer *Peer) *MSG {
 	var msgByte = make([]byte, 0)
-	msgStruct := new()
+	msgStruct := new(MSG)
 	msgStruct.Peer = peer
 	msgStruct.msgType = outgoingMsg
-	msgStruct.ID = msg.ID
-	msgStruct.RawMsg = make([]byte, 0)
 	switch msg.ID {
 
 	case HandShakeMsgID:
@@ -236,6 +233,7 @@ func ParseMsg(msg []byte, peer *Peer) (BaseMSG, error) {
 	}
 	//fmt.Printf("Length %v %v ID %v \n", msgStruct.Length, binary.BigEndian.Uint32(msg[0:4]), msgStruct.ID)
 
+	/*
 	if msgStruct.Length <= len(msg) {
 		switch msgStruct.ID {
 		case BitfieldMsg:
@@ -288,8 +286,8 @@ func ParseMsg(msg []byte, peer *Peer) (BaseMSG, error) {
 		// I will have to be more accurate later
 		err = errors.New("wrong msg len")
 	}
-
-	return msgStruct, err
+*/
+	return nil, err
 }
 
 func ParseHandShake(msg []byte, infoHash string) (HandShakeMsg, error) {

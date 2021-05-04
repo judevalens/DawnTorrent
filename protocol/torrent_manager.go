@@ -73,7 +73,7 @@ func (manager *TorrentManager) msgRouter() {
 
 		select {
 		case msg := <-manager.msgChan:
-			msg.handleRequest()
+			msg.handleMsg(manager)
 		case <-manager.stopMsgPipeLine:
 			return
 		}
@@ -175,4 +175,30 @@ func (manager *TorrentManager) msgRouter() {
 
 	}
 	*/
+}
+
+
+func (manager *TorrentManager) handleUnInterestedMsg(msg UnInterestedMSG) {
+}
+
+func (manager *TorrentManager) handleInterestedMsg(msg InterestedMSG) {
+}
+
+func (manager *TorrentManager) handleUnChokeMsg(msg UnChockedMsg) {
+}
+func (manager *TorrentManager) handleChokeMsg(msg ChockedMSg) {
+}
+
+func (manager *TorrentManager) handleHaveMsg(msg HaveMSG) {
+}
+func (manager *TorrentManager) handleBitFieldMsg(msg BitfieldMSG) {
+}
+
+func (manager *TorrentManager) handlePieceMsg(msg PieceMSG) {
+}
+
+func (manager *TorrentManager) handleRequestMsg(msg RequestMSG) {
+}
+
+func (manager *TorrentManager) handleCancelMsg(msg CancelRequestMSG) {
 }

@@ -700,7 +700,7 @@ func (peer *Peer) updateState(choked, interested bool, torrent *Torrent) {
 		}
 	}
 }
-func (peer *Peer) receive(connection *net.TCPConn, peerSwarm *PeerSwarm) error {
+func (peer *Peer) receive(connection *net.TCPConn, msgChan chan BaseMSG) error {
 	var readFromConnError error
 	i := 0
 	msgLenBuffer := make([]byte, 4)
@@ -713,10 +713,11 @@ func (peer *Peer) receive(connection *net.TCPConn, peerSwarm *PeerSwarm) error {
 		incomingMsgBuffer := make([]byte, msgLen)
 
 		nByteRead, readFromConnError = io.ReadFull(connection, incomingMsgBuffer)
-
-		parsedMsg, parserMsgErr := ParseMsg(bytes.Join([][]byte{msgLenBuffer, incomingMsgBuffer}, []byte{}), peer)
+		_ = nByteRead
+		_, parserMsgErr := ParseMsg(bytes.Join([][]byte{msgLenBuffer, incomingMsgBuffer}, []byte{}), peer)
 
 		if parserMsgErr == nil {
+			/*
 			// TODO will probably use a worker pool here !
 			//peerSwarm.DawnTorrent.requestQueue.addJob(parsedMsg)
 			if parsedMsg.ID == PieceMsg {
@@ -735,7 +736,7 @@ func (peer *Peer) receive(connection *net.TCPConn, peerSwarm *PeerSwarm) error {
 			if parsedMsg.ID == UnchockeMsg {
 				//os.Exit(213)
 			}
-
+			*/
 		}
 
 		i++

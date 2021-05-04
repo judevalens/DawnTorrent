@@ -2,32 +2,32 @@ package protocol
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
 )
 
-
 const (
 	HandShakeMsgID         = 19
-	ChockedMsg             = 0
-	UnchockeMsg            = 1
-	InterestedMsg          = 2
-	UnInterestedMsg        = 3
-	HaveMsg                = 4
-	BitfieldMsg            = 5
-	RequestMsg             = 6
-	PieceMsg               = 7
-	CancelMsg              = 8
+	ChokeMsgId             = 0
+	UnChokeMsgId           = 1
+	InterestedMsgId          = 2
+	UnInterestedMsgId        = 3
+	HaveMsgId                = 4
+	BitfieldMsgId            = 5
+	RequestMsgId             = 6
+	PieceMsgId              = 7
+	CancelMsgId              = 8
 	DefaultMsgID           = 0
 	udpProtocolID      int = 0x41727101980
 	udpConnectRequest      = 0
 	udpAnnounceRequest     = 1
 	udpScrapeRequest       = 2
-	udpError       = 3
-	udpNoneEvent = 0
+	udpError               = 3
+	udpNoneEvent           = 0
 
-	incomingMsg    = 1
-	outgoingMsg    = -1
+	incomingMsg = 1
+	outgoingMsg = -1
 )
 
 const (
@@ -35,163 +35,241 @@ const (
 )
 
 var (
-	keepALiveMsgLen        int = 0
-	BitFieldMsgLen         int = 1
-	chokeMsgLen            int = 1
-	unChokeMsgLen          int = 1
-	interestedMsgLen       int = 1
-	UninterestedMsgLen     int = 1
-	haveMsgLen             int = 5
-	requestMsgLen          int = 13
-	cancelMsgLen           int = 13
-	pieceLen               int = 9
-	portMsgLen                 = []byte{0, 0, 0, 3}
-	HandShakePrefixLength      = 19
-	BittorrentIdentifier       = "BitTorrent protocol"
-	BitTorrentReservedByte     = []byte{0, 0, 0, 0, 0, 0, 0, 0}
-	MaxMsgSize                 = 2000
+	keepALiveMsgLen        = 0
+	BitFieldMsgLen         = 1
+	chokeMsgLen            = 1
+	unChokeMsgLen          = 1
+	interestedMsgLen       = 1
+	UninterestedMsgLen     = 1
+	haveMsgLen             = 5
+	requestMsgLen          = 13
+	cancelMsgLen           = 13
+	pieceLen               = 9
+	portMsgLen             = []byte{0, 0, 0, 3}
+	HandShakePrefixLength  = 19
+	BittorrentIdentifier   = "BitTorrent protocol"
+	BitTorrentReservedByte = []byte{0, 0, 0, 0, 0, 0, 0, 0}
+	MaxMsgSize             = 2000
 	maxPiece               byte
 )
 
-
-type BaseMSG interface {
-	handleRequest()
+type BaseMsg interface {
+	handleMsg(manager *TorrentManager)
 	marshal() []byte
 }
 
-
-type MSG struct {
-	ID             int
-	Length         int
+type Msg struct {
+	ID     int
+	Length int
 }
 
 type HandShake struct {
-	pstrlen string
-	pstr string
-	infoHash string
+	pstrlen       string
+	pstr          string
+	infoHash      string
 	reservedBytes []byte
-	peerID string
+	peerID        string
 }
 
-func newHandShakeMsg(infohash string, peerID string) []byte  {
+func newHandShakeMsg(infohash string, peerID string) []byte {
 	msg := HandShake{
 		infoHash: infohash,
 	}
 	return msg.marshal()
 }
 
-func(h HandShake) marshal() []byte {
-	return bytes.Join([][]byte{{byte(HandShakePrefixLength)}, []byte(BittorrentIdentifier), BitTorrentReservedByte, []byte(h.infoHash), []byte(h.peerID)}, []byte(""))
+func (h HandShake) marshal() []byte {
+	return bytes.Join([][]byte{{byte(HandShakeMsgID)}, []byte(BittorrentIdentifier), BitTorrentReservedByte, []byte(h.infoHash), []byte(h.peerID)}, []byte(""))
 }
-func(h HandShake) handleRequest() {
+func (h HandShake) handleMsg(*TorrentManager) {
 }
 
-func parseHandShake(data []byte)  (*HandShake,error){
-	if len(data) < handShakeLen{
-		return nil,errors.New("could not parse msg")
+func parseHandShake(data []byte) (*HandShake, error) {
+	if len(data) < handShakeLen {
+		return nil, errors.New("could not parse msg")
 	}
 
 	handShakeMsg := new(HandShake)
 
 	handShakeMsg.pstrlen = string(data[0:1])
 	handShakeMsg.pstr = string(data[1:len(BittorrentIdentifier)])
-	handShakeMsg.reservedBytes = data[len(BittorrentIdentifier):len(BittorrentIdentifier)+8]
-	handShakeMsg.reservedBytes = data[len(BittorrentIdentifier)+8:len(BittorrentIdentifier)+28]
-	handShakeMsg.reservedBytes = data[len(BittorrentIdentifier)+28:len(BittorrentIdentifier)+48]
-	return handShakeMsg,nil
+	handShakeMsg.reservedBytes = data[len(BittorrentIdentifier) : len(BittorrentIdentifier)+8]
+	handShakeMsg.reservedBytes = data[len(BittorrentIdentifier)+8 : len(BittorrentIdentifier)+28]
+	handShakeMsg.reservedBytes = data[len(BittorrentIdentifier)+28 : len(BittorrentIdentifier)+48]
+	return handShakeMsg, nil
 
 }
 
-func (msg MSG) handleRequest() {
+func (msg Msg) handleRequest() {
 	panic("implement me")
 }
 
-func (msg MSG) handleMsg()  {
+func (msg Msg) handleMsg() {
 	fmt.Printf("not implemented yet, msg id: %v", msg.ID)
 }
 
-type HanShakeMSG struct{
-	BaseMSG
+type HanShakeMsg struct {
+	BaseMsg
 }
 
-type ChockedMSg struct{
-	BaseMSG
+func (h HanShakeMsg) handle() {
+	panic("implement me")
 }
 
-type UnChockedMSg struct{
-	BaseMSG
+func (h HanShakeMsg) buildMsg(data []byte) {
+	panic("implement me")
 }
 
-type InterestedMSG struct{
-	BaseMSG
+type ChockedMSg struct {
+	BaseMsg
 }
 
-type UnInterestedMSG struct {
-	BaseMSG
+func (msg ChockedMSg) handleMsg(manager *TorrentManager) {
+	manager.handleChokeMsg(msg)
+
 }
 
-type HaveMSG struct {
-	BaseMSG
+type UnChockedMsg struct {
+	BaseMsg
+}
+
+func (msg UnChockedMsg) handleMsg(manager *TorrentManager) {
+	manager.handleUnChokeMsg(msg)
+
+}
+
+type InterestedMsg struct {
+	BaseMsg
+}
+
+func (msg InterestedMsg) handleMsg(manager *TorrentManager) {
+	manager.handleInterestedMsg(msg)
+
+}
+
+type UnInterestedMsg struct {
+	BaseMsg
+}
+
+func (msg UnInterestedMsg) handleMsg(manager *TorrentManager) {
+	manager.handleUnInterestedMsg(msg)
+
+}
+
+type HaveMsg struct {
+	BaseMsg
 	PieceIndex int
 }
 
-type BitfieldMSG struct {
-	BaseMSG
-	Bitfield   []byte
+func (msg HaveMsg) handleMsg(manager *TorrentManager) {
+	manager.handleHaveMsg(msg)
+
 }
 
-type RequestMSG struct {
-	BaseMSG
+type BitfieldMsg struct {
+	BaseMsg
+	Bitfield []byte
+}
+
+func (msg BitfieldMsg) handleMsg(manager *TorrentManager) {
+	manager.handleBitFieldMsg(msg)
+
+}
+
+type RequestMsg struct {
+	BaseMsg
 	PieceIndex int
 	BeginIndex int
-	Length int
+	Length     int
 }
 
-type CancelRequestMSG struct {
-	BaseMSG
+func (msg RequestMsg) handleMsg(manager *TorrentManager) {
+	manager.handleRequestMsg(msg)
+}
+
+type CancelRequestMsg struct {
+	BaseMsg
 	PieceIndex int
 	BeginIndex int
-	Length int
+	Length     int
 }
 
-type PieceMSG struct {
-	BaseMSG
+func (msg CancelRequestMsg) handleMsg(manager *TorrentManager) {
+	manager.handleCancelMsg(msg)
+}
+
+type PieceMsg struct {
+	BaseMsg
 	PieceIndex int
 	BeginIndex int
-	data    []byte
+	data       []byte
 }
 
-
-
-func parseBitfieldMSG(data []byte, baseMSg BaseMSG) (BitfieldMSG,error){
-	return BitfieldMSG{},nil
+func (msg PieceMsg) handleMsg(manager *TorrentManager) {
+	manager.handlePieceMsg(msg)
 }
 
-
-func parseChockedMSg(data []byte, baseMSg BaseMSG) (ChockedMSg,error){
-	return ChockedMSg{},nil
+func parseBitfieldMsg(data []byte, baseMSg Msg) (BitfieldMsg, error) {
+	return BitfieldMsg{}, nil
 }
 
-func parseUnChockedMSg(data []byte, baseMSg BaseMSG) (UnChockedMSg,error){
-	return UnChockedMSg{},nil
-}
-func parseInterestedMSG(data []byte, baseMSg BaseMSG) (InterestedMSG,error){
-	return InterestedMSG{},nil
+func parseChockedMSg(data []byte, baseMSg Msg) (ChockedMSg, error) {
+	return ChockedMSg{}, nil
 }
 
-func parseUnInterestedMSG(data []byte, baseMSg BaseMSG) (UnInterestedMSG,error){
-	return UnInterestedMSG{},nil
+func parseUnChockedMSg(data []byte, baseMSg Msg) (UnChockedMsg, error) {
+	return UnChockedMsg{}, nil
+}
+func parseInterestedMsg(data []byte, baseMSg Msg) (InterestedMsg, error) {
+	return InterestedMsg{}, nil
 }
 
-func parseHaveMSG(data []byte, baseMSg BaseMSG) (HaveMSG,error){
-	return HaveMSG{},nil
+func parseUnInterestedMsg(data []byte, baseMSg Msg) (UnInterestedMsg, error) {
+	return UnInterestedMsg{}, nil
 }
-func parseRequestMSG(data []byte, baseMSg BaseMSG) (RequestMSG,error)  {
-	return RequestMSG{},nil
+
+func parseHaveMsg(data []byte, baseMSg Msg) (HaveMsg, error) {
+	return HaveMsg{}, nil
 }
-func parseCancelRequestMSG(data []byte, baseMSg BaseMSG) (CancelRequestMSG,error)  {
-	return CancelRequestMSG{},nil
+func parseRequestMsg(data []byte, baseMSg Msg) (RequestMsg, error) {
+	return RequestMsg{}, nil
 }
-func parsePieceMSG(data []byte, baseMSg BaseMSG) (PieceMSG,error)  {
-	return PieceMSG{},nil
+func parseCancelRequestMsg(data []byte, baseMSg Msg) (CancelRequestMsg, error) {
+	return CancelRequestMsg{}, nil
+}
+func parsePieceMsg(data []byte, baseMSg Msg) (PieceMsg, error) {
+	return PieceMsg{}, nil
+}
+
+func ParseMsg(msg []byte, peer *Peer) (BaseMsg, error) {
+	baseMsg := Msg{}
+	if len(msg) < 5 {
+		return nil, errors.New("msg is too short")
+	}
+	baseMsg.Length = int(binary.BigEndian.Uint32(msg[0:4]))
+	id, _ := binary.Uvarint(msg[4:5])
+	baseMsg.ID = int(id)
+
+	switch baseMsg.ID {
+	case BitfieldMsgId:
+		return parseBitfieldMsg(msg, baseMsg)
+	case RequestMsgId:
+		return parseRequestMsg(msg, baseMsg)
+	case PieceMsgId:
+		return parsePieceMsg(msg, baseMsg)
+	case HaveMsgId:
+		return parseHaveMsg(msg, baseMsg)
+	case CancelMsgId:
+		return parseCancelRequestMsg(msg, baseMsg)
+	case UnChokeMsgId:
+		return parseUnChockedMSg(msg, baseMsg)
+	case ChokeMsgId:
+		return parseChockedMSg(msg, baseMsg)
+	case InterestedMsgId:
+		return parseInterestedMsg(msg, baseMsg)
+	case UnInterestedMsgId:
+		return parseUnInterestedMsg(msg, baseMsg)
+	}
+
+	return nil, nil
 }
