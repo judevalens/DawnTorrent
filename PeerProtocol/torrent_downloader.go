@@ -36,7 +36,7 @@ const (
 func initDownloader(torrentPath string) *TorrentDownloader {
 	downloader := new(TorrentDownloader)
 
-	metaInfo := parser.Unmarshall(torrentPath)
+	metaInfo, _ := parser.Unmarshall(torrentPath)
 
 	infoHashString, infoHashByte := GetInfoHash(metaInfo)
 	downloader.InfoHash = infoHashString

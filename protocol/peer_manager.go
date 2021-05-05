@@ -95,6 +95,7 @@ func (peerSwarm *peerManager) handleNewPeer(connection *net.TCPConn) {
 		peerSwarm.peerOperationReceiver <- addPeerOperation{
 			peer:  newPeer,
 			swarm: peerSwarm,
+			msgReceiver: peerSwarm.torrentManager.msgChan,
 		}
 
 	}
@@ -132,6 +133,7 @@ func (peerSwarm *peerManager) connect(peer *Peer) {
 			peerSwarm.peerOperationReceiver <- addPeerOperation{
 				peer:  peer,
 				swarm: peerSwarm,
+				msgReceiver: peerSwarm.torrentManager.msgChan,
 			}
 		}
 	} else {
@@ -163,7 +165,13 @@ func (peerSwarm *peerManager) DropConnection(peer *Peer) {
 	*/
 }
 
-func (peerSwarm *peerManager) startServer() {
+func (peerSwarm *peerManager) startServer(ctx context.Context) {
+	go func() {
+		for{
+			<-ctx.Done()
+			peerSwarm.stopServer()
+		}
+	}()
 	server, err := net.ListenTCP("tcp", utils.LocalAddr2)
 	peerSwarm.server = server
 	//fmt.Printf("Listening on %v\n", server.Addr().String())
@@ -210,60 +218,8 @@ func (peerSwarm *peerManager) receiveOperation(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case operation := <-peerSwarm.peerOperationReceiver:
-			operation.execute()
+			operation.execute(ctx)
 		}
-
-		/*switch operation.operation {
-		case AddPeer:
-			peerSwarm.addPeer(operation.peer)
-		case ConnectToPeer:
-			if peerSwarm.nActiveConnection < peerSwarm.maxConnection {
-				go peerSwarm.connect(operation.peer)
-			}else {
-				//TODO should add the peer to a queue or something .......
-			}
-
-		case IncomingConnection:
-			if peerSwarm.nActiveConnection < peerSwarm.maxConnection {
-				go peerSwarm.handleNewPeer(operation.incomingPeerConnection)
-			}
-		case RemovePeer:
-			peerSwarm.DropConnection(operation.peer)
-		case SortPeerByDownloadRate:
-			//peerSwarm.SortPeerByDownloadRate()
-		case AddActivePeer:
-			//peerSwarm.addActivePeer(operation.peer)
-		case isPeerFree:
-			var availablePeer *Peer
-
-			for _, peer := range peerSwarm.PeerSorter.activePeers {
-				if peer != nil {
-					if peer.isPeerFree() {
-						availablePeer = peer
-						break
-					}
-				}
-			}
-
-			println("requesting baseTracker ...........")
-			if availablePeer == nil && len(peerSwarm.PeerSorter.activePeers) < 2 {
-				peerSwarm.torrent.LifeCycleChannel <- sendTrackerRequest
-			}
-
-			operation.freePeerChannel <- availablePeer
-		case startReceivingIncomingConnection:
-			if !peerSwarm.receivingIncomingConnection {
-				peerSwarm.receivingIncomingConnection = true
-				go peerSwarm.startServer()
-			}
-		case stopReceivingIncomingConnection:
-			if peerSwarm.receivingIncomingConnection {
-				err := peerSwarm.server.Close()
-				if err != nil {
-					return
-				}
-			}
-		}*/
 	}
 
 }

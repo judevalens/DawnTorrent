@@ -277,7 +277,7 @@ func (peerSwarm *PeerSwarm) httpTrackerRequest(state int) (*parser.BMap, error) 
 
 	fmt.Printf("%v\n", string(trackerResponse))
 
-	trackerDictResponse := parser.UnmarshallFromArray(trackerResponse)
+	trackerDictResponse, _ := parser.UnmarshallFromArray(trackerResponse)
 
 	_, isPresent := trackerDictResponse.Strings["failure reason"]
 

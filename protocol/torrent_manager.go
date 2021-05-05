@@ -33,7 +33,7 @@ func NewTorrentManager(torrentPath string) *TorrentManager {
 	manager.msgChan = make(chan BaseMsg)
 	manager.stopMsgPipeLine = make(chan interface{})
 	manager.torrentState = stopped
-	manager.stateChan = make(chan int)
+	manager.stateChan = make(chan int,1)
 	return manager
 }
 
@@ -41,7 +41,7 @@ func(manager TorrentManager) createTracker(){
 
 }
 
-func (manager TorrentManager) init() {
+func (manager TorrentManager) Init() {
 
 	ctx := context.TODO()
 	cancellableCtx, cancelRoutine := context.WithCancel(ctx)
@@ -56,15 +56,18 @@ func (manager TorrentManager) init() {
 			manager.peerManager.peerOperationReceiver <- startServer{
 				swarm: &manager.peerManager,
 			}
-
 		case stopped:
 			cancelRoutine()
 
 		case completed:
-			//TODO do something !
+			close(manager.stateChan)
 		}
 	}
 
+}
+
+func (manager TorrentManager ) Stop()  {
+	close(manager.stateChan)
 }
 
 func (manager *TorrentManager) runPeriodicDownloader() {

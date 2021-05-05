@@ -199,7 +199,7 @@ func (trp httpTracker2) execRequest() (*parser.BMap, error) {
 
 	fmt.Printf("%v\n", string(trackerResponse))
 
-	trackerDictResponse := parser.UnmarshallFromArray(trackerResponse)
+	trackerDictResponse, _ := parser.UnmarshallFromArray(trackerResponse)
 
 	requestErr, isPresent := trackerDictResponse.Strings["failure reason"]
 

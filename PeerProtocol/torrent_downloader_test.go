@@ -1,8 +1,6 @@
 package PeerProtocol
 
 import (
-	"encoding/hex"
-	"strings"
 	"testing"
 )
 func TestnewFileInfo(t *testing.T){
@@ -10,6 +8,7 @@ func TestnewFileInfo(t *testing.T){
 	//fileInfos := make([]*fileProperty,fileInfosSize)
 }
 
+/*
 func TestInitTorrentFile(t *testing.T) {
 	torrent := new(Torrent)
 	testTorrentFileSingleFile := initDownloader(torrent,"/home/jude/GolandProjects/DawnTorrent/files/ubuntu-20.04-desktop-amd64.iso.torrent")
@@ -70,5 +69,7 @@ func TestInitTorrentFile(t *testing.T) {
 	})
 
 }
+*/
+
 
 

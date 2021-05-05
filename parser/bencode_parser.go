@@ -58,13 +58,16 @@ type Delimiter struct {
 	position      int
 }
 
-func Unmarshall(path string) *BMap {
+func Unmarshall(path string) (*BMap,error) {
 
-	file, _ := ReadFile(path)
+	file, err := ReadFile(path)
+	if err != nil{
+		return nil, err
+	}
 	return UnmarshallFromArray(file)
 }
 
-func UnmarshallFromArray(file []byte) *BMap {
+func UnmarshallFromArray(file []byte) (*BMap,error) {
 
 	dict := new(BMap)
 	containerInfo := new(containerInformation)
@@ -76,7 +79,7 @@ func UnmarshallFromArray(file []byte) *BMap {
 
 	dict.KeyInfo = containerInfo
 
-	return dict
+	return dict,nil
 
 }
 
@@ -164,6 +167,7 @@ func getField(file []byte, pos int, dtype byte) ([]string, int, byte) {
 func Parse(dict *BMap, file []byte, pos int) Result {
 
 	// determine which container it is (map or list)
+	print(len(file))
 	field := file[pos]
 	position := pos
 	position++

@@ -2,7 +2,10 @@ package main
 
 import (
 	"DawnTorrent/protocol"
-
+	"bufio"
+	"fmt"
+	"log"
+	"os"
 
 	//"DawnTorrent/ipc"
 )
@@ -20,15 +23,15 @@ const (
 
 func main() {
 
-	done := make(chan bool)
+	//done := make(chan bool)
 
 
 	//c.addTorrent("/home/jude/GolandProjects/DawnTorrent/files/ubuntu-20.04-desktop-amd64.iso.torrent",PeerProtocol.InitTorrentFile_)
 	//c.torrents["1"].Start()
 
 	torrentPath := "files/ubuntu-20.04-desktop-amd64.iso.torrent"
-	protocol.NewTorrentManager(torrentPath)
-
+	 manager1 := protocol.NewTorrentManager(torrentPath)
+	go manager1.Init()
 	println("non blocking")
 
 	/*
@@ -42,9 +45,26 @@ func main() {
 
 
 	*/
-	<-done
+
+	scanner := bufio.NewScanner(os.Stdin)
+	var command string
+	var i int = 0
+	for command != "exit" {
+		scanner.Scan()
+		command = scanner.Text()
+		fmt.Printf("%v: %v\n", i,command)
+		i++
+	}
+
+	manager1.Stop()
+
+	if err := scanner.Err(); err != nil {
+		log.Println(err)
+	}
 
 }
+
+
 
 
 

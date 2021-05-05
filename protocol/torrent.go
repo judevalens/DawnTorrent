@@ -55,11 +55,12 @@ type fileMetadata struct {
 	EndIndex   int
 }
 
-func loadTorrentFile(filePath string) *parser.BMap {
-	return parser.Unmarshall(filePath)
-}
 
-func createNewTorrent(torrentMap *parser.BMap) *Torrent {
+func createNewTorrent(torrentPath string) (*Torrent,error) {
+	torrentMap, err := parser.Unmarshall(torrentPath)
+	if err != nil{
+		return nil, err
+	}
 	torrentFile := new(Torrent)
 
 	infoHashByte, hexInfoHash := GetInfoHash(torrentMap)
@@ -67,9 +68,15 @@ func createNewTorrent(torrentMap *parser.BMap) *Torrent {
 	torrentFile.infoHashByte = infoHashByte
 	torrentFile.InfoHashHex = hexInfoHash
 	torrentFile.AnnouncerUrl = torrentMap.Strings["announce"]
+	fmt.Printf("%v",torrentMap.BLists["announce-list"].BLists[0].Strings)
 
-	torrentFile.AnnounceList = make([]string, 0)
-	torrentFile.AnnounceList = torrentMap.BLists["announce-list"].Strings
+	torrentFile.AnnounceList = make([]string,len(torrentMap.BLists["announce-list"].BLists))
+
+	for i,announcerUrl := range torrentMap.BLists["announce-list"].BLists{
+		fmt.Printf("url : %v\n", announcerUrl.Strings)
+		torrentFile.AnnounceList[i] = announcerUrl.Strings[0]
+	}
+
 	torrentFile.CreationDate = torrentMap.Strings["creation date"]
 	torrentFile.Encoding = torrentMap.Strings["encoding"]
 	torrentFile.piecesHash = torrentMap.BMaps["info"].Strings["pieces"]
@@ -96,7 +103,7 @@ func createNewTorrent(torrentMap *parser.BMap) *Torrent {
 		totalLength += fileLength
 		fileProperties = []fileMetadata{createFileProperties(fileProperties, filePath, fileLength, 0)}
 	}
-	return torrentFile
+	return torrentFile,nil
 }
 
 // store the path , len , start and end index of file
