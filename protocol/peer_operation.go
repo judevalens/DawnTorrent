@@ -11,6 +11,7 @@ type PeerOperation interface {
 type addPeerOperation struct {
 	peer *Peer
 	swarm *peerManager
+	msgReceiver chan BaseMsg
 }
 
 func(operation addPeerOperation) execute(){
@@ -18,7 +19,7 @@ func(operation addPeerOperation) execute(){
 	// for now, we set no limit on the max connections allowed
 	operation.swarm.activePeers[operation.peer.id] = operation.peer
 	go func() {
-		err := operation.peer.receive(nil, nil)
+		err := operation.peer.receive(nil, operation.msgReceiver)
 		if err != nil {
 
 		}

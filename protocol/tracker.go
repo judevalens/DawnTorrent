@@ -4,6 +4,7 @@ import (
 	"DawnTorrent/PeerProtocol"
 	"DawnTorrent/parser"
 	"DawnTorrent/utils"
+	"context"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -30,7 +31,7 @@ type tracker interface {
 	getAnnouncerUrl() *url.URL
 	getInfoHash() string
 	getTransferStats() (int, int, int)
-	starTracker()
+	starTracker(ctx context.Context)
 	stopTracker()
 	resetTracker(duration time.Duration)
 }
@@ -91,7 +92,11 @@ func (t baseTracker) getTransferStats() (int, int, int) {
 	return 0, 0, 0
 }
 
-func (t baseTracker) starTracker() {
+func (t baseTracker) starTracker(ctx context.Context) {
+	defer func() {
+		<- ctx.Done()
+		t.state.cancel()
+	}()
 	t.state = initialRequest{}
 	t.state.handle()
 }
@@ -138,16 +143,18 @@ type recurringRequest struct {
 }
 
 func (r recurringRequest) handle() {
-	r.tracker.timer = time.AfterFunc(r.tracker.interval, func() {
-		interval, err := r.tracker.handleRequest()
-		if err != nil {
-			return
-		}
 
-		r.tracker.interval = time.Duration(interval)
-		r.tracker.state = recurringRequest{tracker: r.tracker}
-		r.handle()
-	})
+		r.tracker.timer = time.AfterFunc(r.tracker.interval, func() {
+			interval, err := r.tracker.handleRequest()
+			if err != nil {
+				return
+			}
+
+			r.tracker.interval = time.Duration(interval)
+			r.tracker.state = recurringRequest{tracker: r.tracker}
+			r.handle()
+		})
+
 }
 
 func (r recurringRequest) cancel() {

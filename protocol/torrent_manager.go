@@ -1,5 +1,7 @@
 package protocol
 
+import "context"
+
 const (
 	started   = iota
 	stopped   = iota
@@ -12,7 +14,7 @@ type TorrentManager struct {
 	torrent         Torrent
 	peerManager     peerManager
 	stopMsgPipeLine chan interface{}
-	msgChan         chan BaseMSG
+	msgChan         chan BaseMsg
 	torrentState    int
 	uploaded        int
 	totalDownloaded int
@@ -23,15 +25,16 @@ type TorrentManager struct {
 
 }
 
-func newTorrentManager(torrentPath string)  {
-	manager := TorrentManager{}
+func NewTorrentManager(torrentPath string) *TorrentManager {
+	manager := new(TorrentManager)
 	manager.torrent = newTorrent(torrentPath)
 	manager.peerManager = newPeerManager()
 	manager.tracker = newTracker(manager.torrent.AnnouncerUrl,manager.torrent.InfoHashHex,manager.peerManager)
-	manager.msgChan = make(chan BaseMSG)
+	manager.msgChan = make(chan BaseMsg)
 	manager.stopMsgPipeLine = make(chan interface{})
 	manager.torrentState = stopped
 	manager.stateChan = make(chan int)
+	return manager
 }
 
 func(manager TorrentManager) createTracker(){
@@ -40,22 +43,23 @@ func(manager TorrentManager) createTracker(){
 
 func (manager TorrentManager) init() {
 
+	ctx := context.TODO()
+	cancellableCtx, cancelRoutine := context.WithCancel(ctx)
 	for {
 		manager.state = <-manager.stateChan
 
 		switch manager.state {
 		case started:
-			go manager.msgRouter()
-			go manager.peerManager.receiveOperation()
-			go manager.tracker.starTracker()
+			go manager.msgRouter(cancellableCtx)
+			go manager.peerManager.receiveOperation(cancellableCtx)
+			go manager.tracker.starTracker(cancellableCtx)
 			manager.peerManager.peerOperationReceiver <- startServer{
 				swarm: &manager.peerManager,
 			}
 
 		case stopped:
-			manager.peerManager.peerOperationReceiver <- stopServer{
-				swarm: &manager.peerManager,
-			}
+			cancelRoutine()
+
 		case completed:
 			//TODO do something !
 		}
@@ -67,15 +71,15 @@ func (manager *TorrentManager) runPeriodicDownloader() {
 
 }
 
-func (manager *TorrentManager) msgRouter() {
+func (manager *TorrentManager) msgRouter(ctx context.Context) {
 
 	for {
 
 		select {
+		case <- ctx.Done():
+			return
 		case msg := <-manager.msgChan:
 			msg.handleMsg(manager)
-		case <-manager.stopMsgPipeLine:
-			return
 		}
 
 	}
@@ -178,10 +182,10 @@ func (manager *TorrentManager) msgRouter() {
 }
 
 
-func (manager *TorrentManager) handleUnInterestedMsg(msg UnInterestedMSG) {
+func (manager *TorrentManager) handleUnInterestedMsg(msg UnInterestedMsg) {
 }
 
-func (manager *TorrentManager) handleInterestedMsg(msg InterestedMSG) {
+func (manager *TorrentManager) handleInterestedMsg(msg InterestedMsg) {
 }
 
 func (manager *TorrentManager) handleUnChokeMsg(msg UnChockedMsg) {
@@ -189,16 +193,16 @@ func (manager *TorrentManager) handleUnChokeMsg(msg UnChockedMsg) {
 func (manager *TorrentManager) handleChokeMsg(msg ChockedMSg) {
 }
 
-func (manager *TorrentManager) handleHaveMsg(msg HaveMSG) {
+func (manager *TorrentManager) handleHaveMsg(msg HaveMsg) {
 }
-func (manager *TorrentManager) handleBitFieldMsg(msg BitfieldMSG) {
-}
-
-func (manager *TorrentManager) handlePieceMsg(msg PieceMSG) {
+func (manager *TorrentManager) handleBitFieldMsg(msg BitfieldMsg) {
 }
 
-func (manager *TorrentManager) handleRequestMsg(msg RequestMSG) {
+func (manager *TorrentManager) handlePieceMsg(msg PieceMsg) {
 }
 
-func (manager *TorrentManager) handleCancelMsg(msg CancelRequestMSG) {
+func (manager *TorrentManager) handleRequestMsg(msg RequestMsg) {
+}
+
+func (manager *TorrentManager) handleCancelMsg(msg CancelRequestMsg) {
 }

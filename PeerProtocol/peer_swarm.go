@@ -158,10 +158,10 @@ func (peerSwarm *PeerSwarm) connect(peer *Peer) {
 				peerSwarm.peerOperation <- peerOperation
 				peerSwarm.torrent.jobQueue.AddJob(GetMsg(MSG{ID: UnchockeMsg}, peer))
 				peerSwarm.torrent.jobQueue.AddJob(GetMsg(MSG{ID: InterestedMsg}, peer))
-				err := peer.receive(connection, peerSwarm)
+				//err := peer.receive(connection, peerSwarm)
 				peerOperation.operation = RemovePeer
 				peerSwarm.peerOperation <- peerOperation
-				fmt.Printf("\nconnec err %v\n", err)
+			//	fmt.Printf("\nconnec err %v\n", err)
 				/////os.Exit(22)
 
 			}
@@ -197,7 +197,7 @@ func (peerSwarm *PeerSwarm) handleNewPeer(connection *net.TCPConn) {
 				peerSwarm.peerOperation <- peerOperation
 
 				peerSwarm.torrent.jobQueue.AddJob(GetMsg(MSG{ID: InterestedMsg}, newPeer))
-				_ = newPeer.receive(connection, peerSwarm)
+				//_ = newPeer.receive(connection, peerSwarm)
 				peerOperation.operation = RemovePeer
 				peerSwarm.peerOperation <- peerOperation
 

@@ -3,6 +3,7 @@ package protocol
 import (
 	_ "DawnTorrent/parser"
 	"DawnTorrent/utils"
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -162,7 +163,6 @@ func (peerSwarm *peerManager) DropConnection(peer *Peer) {
 	*/
 }
 
-
 func (peerSwarm *peerManager) startServer() {
 	server, err := net.ListenTCP("tcp", utils.LocalAddr2)
 	peerSwarm.server = server
@@ -202,12 +202,16 @@ func (peerSwarm *peerManager) stopServer() {
 	}
 }
 
-func (peerSwarm *peerManager) receiveOperation() {
+func (peerSwarm *peerManager) receiveOperation(ctx context.Context) {
 
 	for {
-		operation := <-peerSwarm.peerOperationReceiver
 
-		operation.execute()
+		select {
+		case <-ctx.Done():
+			return
+		case operation := <-peerSwarm.peerOperationReceiver:
+			operation.execute()
+		}
 
 		/*switch operation.operation {
 		case AddPeer:

@@ -3,6 +3,7 @@ package protocol
 import (
 	"DawnTorrent/parser"
 	"bytes"
+	"context"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -75,47 +76,39 @@ func NewPeerFromMap(peerData *parser.BMap) *Peer{
 	return NewPeer(peerData.Strings["ip"], peerData.Strings["port"],peerData.Strings["peer id"])
 }
 
-func (peer *Peer) receive(connection *net.TCPConn, peerSwarm *peerManager) error {
-	var readFromConnError error
-	i := 0
-	msgLenBuffer := make([]byte, 4)
+func (peer *Peer) stopReceiving(context context.Context){
+	<- context.Done()
 
+	err := peer.connection.Close()
+	if err != nil {
+		return
+	}
+}
+
+func (peer *Peer) receive(context context.Context, msgChan chan BaseMsg) error {
+
+	go peer.stopReceiving(context)
+
+	var readFromConnError error
+	msgLenBuffer := make([]byte, 4)
 	for readFromConnError == nil {
 
-		var nByteRead int
-		nByteRead, readFromConnError = io.ReadFull(connection, msgLenBuffer)
-		msgLen := int(binary.BigEndian.Uint32(msgLenBuffer[0:4]))
-		incomingMsgBuffer := make([]byte, msgLen)
+			var nByteRead int
+			//reads the length of the incoming msg
+			nByteRead, readFromConnError = io.ReadFull(peer.connection, msgLenBuffer)
+			msgLen := int(binary.BigEndian.Uint32(msgLenBuffer[0:4]))
 
-		nByteRead, readFromConnError = io.ReadFull(connection, incomingMsgBuffer)
-		_ = nByteRead
-		_, parserMsgErr := ParseMsg(bytes.Join([][]byte{msgLenBuffer, incomingMsgBuffer}, []byte{}), peer)
+			// reads the full payload
+			incomingMsgBuffer := make([]byte, msgLen)
+			nByteRead, readFromConnError = io.ReadFull(peer.connection, incomingMsgBuffer)
+			_ = nByteRead
+			msg, parserMsgErr := ParseMsg(bytes.Join([][]byte{msgLenBuffer, incomingMsgBuffer}, []byte{}), peer)
 
-		if parserMsgErr == nil {
-			/*
-				// TODO will probably use a worker pool here !
-				//peerSwarm.DawnTorrent.requestQueue.addJob(parsedMsg)
-				if parsedMsg.ID == PieceMsg {
-					//peerSwarm.DawnTorrent.pieceQueue.Add(parsedMsg)
-					if nByteRead != parsedMsg.Length && nByteRead > 13 {
-						fmt.Printf("nByteRead bBytesRead %v, msgLen %v", nByteRead, parsedMsg.Length)
-						//os.Exit(25)
-					}
-					peerSwarm.torrent.msgRouter(parsedMsg)
-				} else {
-					peerSwarm.torrent.jobQueue.AddJob(parsedMsg)
+			if parserMsgErr == nil {
+				msgChan <- msg
 
-				}
-				//peerSwarm.DawnTorrent.msgRouter(parsedMsg)
-
-				if parsedMsg.ID == UnchockeMsg {
-					//os.Exit(213)
-				}
-			*/
 		}
 
-		i++
-		//println("---------------------------------------------")
 
 	}
 
