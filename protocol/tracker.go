@@ -42,10 +42,10 @@ type baseTracker struct {
 	trackerURL  *url.URL
 	interval    time.Duration
 	timer       *time.Timer
-	peerManager peerManager
+	peerManager *peerManager
 }
 
-func newTracker(announcerUrlString ,infoHash string, peerManager peerManager) tracker {
+func newTracker(announcerUrlString ,infoHash string, peerManager *peerManager) tracker {
 	var tracker tracker
 	trackerURL, err := url.Parse(announcerUrlString)
 
@@ -126,6 +126,7 @@ func (i initialRequest) handle() {
 	}
 	i.tracker.interval = time.Duration(interval)
 	i.tracker.state = recurringRequest{}
+	log.Print("launching tracker request")
 	i.tracker.state.handle()
 
 }
@@ -222,7 +223,7 @@ func (trp httpTracker2) handleRequest() (int, error) {
 	for _, peer := range peers {
 		operation := addPeerOperation{
 			peer:  peer,
-			swarm: &trp.baseTracker.peerManager,
+			swarm: trp.baseTracker.peerManager,
 		}
 		trp.baseTracker.peerManager.peerOperationReceiver <- operation
 	}
@@ -246,7 +247,7 @@ func (trp udpTracker2) handleRequest() (int, error) {
 	for _, peer := range peers {
 		operation := addPeerOperation{
 			peer:  peer,
-			swarm: &trp.baseTracker.peerManager,
+			swarm: trp.baseTracker.peerManager,
 		}
 		trp.baseTracker.peerManager.peerOperationReceiver <- operation
 	}

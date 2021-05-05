@@ -1,18 +1,21 @@
 package protocol
 
-import "context"
+import (
+	"context"
+	"log"
+)
 
 const (
-	started   = iota
-	stopped   = iota
-	completed = iota
+	Started   = iota
+	Stopped   = iota
+	Completed = iota
 )
 
 
 
 type TorrentManager struct {
 	torrent         Torrent
-	peerManager     peerManager
+	peerManager     *peerManager
 	stopMsgPipeLine chan interface{}
 	msgChan         chan BaseMsg
 	torrentState    int
@@ -28,38 +31,38 @@ type TorrentManager struct {
 func NewTorrentManager(torrentPath string) *TorrentManager {
 	manager := new(TorrentManager)
 	manager.torrent = newTorrent(torrentPath)
-	manager.peerManager = newPeerManager()
-	manager.tracker = newTracker(manager.torrent.AnnouncerUrl,manager.torrent.InfoHashHex,manager.peerManager)
 	manager.msgChan = make(chan BaseMsg)
-	manager.stopMsgPipeLine = make(chan interface{})
-	manager.torrentState = stopped
+	manager.peerManager = newPeerManager(manager.msgChan,manager.torrent.InfoHashHex)
+	manager.tracker = newTracker(manager.torrent.AnnouncerUrl,manager.torrent.InfoHashHex,manager.peerManager)
+
+	manager.torrentState = Stopped
 	manager.stateChan = make(chan int,1)
 	return manager
 }
 
-func(manager TorrentManager) createTracker(){
-
+func (manager TorrentManager) SetState(state int)  {
+	manager.stateChan <- state
 }
 
 func (manager TorrentManager) Init() {
 
 	ctx := context.TODO()
-	cancellableCtx, cancelRoutine := context.WithCancel(ctx)
+	cancellableCtx, _ := context.WithCancel(ctx)
 	for {
 		manager.state = <-manager.stateChan
-
+		log.Printf("new state : %v",manager.state)
 		switch manager.state {
-		case started:
+		case Started:
 			go manager.msgRouter(cancellableCtx)
 			go manager.peerManager.receiveOperation(cancellableCtx)
 			go manager.tracker.starTracker(cancellableCtx)
 			manager.peerManager.peerOperationReceiver <- startServer{
-				swarm: &manager.peerManager,
+				swarm: manager.peerManager,
 			}
-		case stopped:
-			cancelRoutine()
+		case Stopped:
+			//cancelRoutine()
 
-		case completed:
+		case Completed:
 			close(manager.stateChan)
 		}
 	}

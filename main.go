@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 
 	//"DawnTorrent/ipc"
 )
@@ -32,6 +33,7 @@ func main() {
 	torrentPath := "files/ubuntu-20.04-desktop-amd64.iso.torrent"
 	 manager1 := protocol.NewTorrentManager(torrentPath)
 	go manager1.Init()
+	 manager1.SetState(protocol.Started)
 	println("non blocking")
 
 	/*
@@ -53,6 +55,12 @@ func main() {
 		scanner.Scan()
 		command = scanner.Text()
 		fmt.Printf("%v: %v\n", i,command)
+		state,err := strconv.Atoi(command)
+			if err != nil{
+				log.Printf("err: %v", err)
+				continue
+			}
+			manager1.SetState(state)
 		i++
 	}
 

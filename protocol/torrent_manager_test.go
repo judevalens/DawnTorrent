@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"github.com/stretchr/testify/assert"
 	"strconv"
 	"testing"
@@ -40,22 +41,25 @@ func TestNewTorrent(t *testing.T) {
  func TestTorrentManager_Init(t *testing.T) {
 	 testTorrent := "../files/ubuntu-20.04-desktop-amd64.iso.torrent"
 
-	 manager := NewTorrentManager(testTorrent)
-	 manager.Init()
+	 _ = NewTorrentManager(testTorrent)
+	 //manager.Init()
  }
 
 func TestTracker(t *testing.T){
+
 	var err error
 	testTorrent := "../files/ubuntu-20.04-desktop-amd64.iso.torrent"
 	torrent, err := createNewTorrent(testTorrent)
 
 	if err != nil{
 		assert.Fail(t, err.Error())
+		return
 	}
 
-	peerManager := newPeerManager()
+	peerManager := newPeerManager(nil,torrent.InfoHashHex)
 
 
+	_ = newTracker(torrent.AnnouncerUrl,torrent.InfoHashHex,peerManager)
+	_ = context.Background()
 
-	tracker := newTracker(torrent)
 }

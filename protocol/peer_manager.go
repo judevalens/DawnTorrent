@@ -10,6 +10,7 @@ import (
 	"net"
 	_ "net"
 	_ "os"
+	"reflect"
 	"strconv"
 	_ "strconv"
 )
@@ -32,6 +33,7 @@ type peerManager struct {
 func newPeerManager(msgReceiver chan BaseMsg,infoHash string) *peerManager {
 	peerManager := new(peerManager)
 	peerManager.msgReceiver = msgReceiver
+	peerManager.peerOperationReceiver = make(chan PeerOperation)
 	return peerManager
 }
 
@@ -150,9 +152,15 @@ func (peerSwarm *peerManager) startServer(ctx context.Context) {
 		}
 	}()
 	server, err := net.ListenTCP("tcp", utils.LocalAddr2)
+
+	if err != nil {
+
+		log.Fatalf("err: %v",err)
+	}
+
 	peerSwarm.server = server
-	//fmt.Printf("Listening on %v\n", server.Addr().String())
-	if err == nil {
+	log.Printf("Listening on %v\n", server.Addr().String())
+
 		for {
 			var connection *net.TCPConn
 			var connErr error
@@ -172,9 +180,6 @@ func (peerSwarm *peerManager) startServer(ctx context.Context) {
 
 		}
 
-	} else {
-		log.Fatalf("error: %v", err)
-	}
 }
 
 func (peerSwarm *peerManager) stopServer() {
@@ -188,13 +193,15 @@ func (peerSwarm *peerManager) stopServer() {
 }
 
 func (peerSwarm *peerManager) receiveOperation(ctx context.Context) {
-
+	log.Printf("starting peer operation receiver")
 	for {
 
 		select {
 		case <-ctx.Done():
+			log.Printf("stopping peer operation receiver")
 			return
 		case operation := <-peerSwarm.peerOperationReceiver:
+			log.Printf("new operation received: %v", reflect.TypeOf(operation))
 			operation.execute(ctx)
 		}
 	}

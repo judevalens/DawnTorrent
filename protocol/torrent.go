@@ -15,11 +15,6 @@ const (
 	MultipleFile = iota
 )
 
-const (
-	NotStarted = iota
-	InProgress = iota
-	Completed  = iota
-)
 
 type Torrent struct {
 	AnnouncerUrl       string
