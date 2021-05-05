@@ -3,18 +3,23 @@ package protocol
 import (
 	"context"
 	"log"
+	"reflect"
 )
 
 const (
-	Started   = iota
-	Stopped   = iota
-	Completed = iota
+	StartTorrent    = iota
+	StopTorrent     = iota
+	CompleteTorrent = iota
 )
 
-
+type torrentManagerStateI interface {
+	start()
+	stop()
+	complete()
+}
 
 type TorrentManager struct {
-	torrent         Torrent
+	torrent         *Torrent
 	peerManager     *peerManager
 	stopMsgPipeLine chan interface{}
 	msgChan         chan BaseMsg
@@ -24,65 +29,104 @@ type TorrentManager struct {
 	left            int
 	stateChan       chan int
 	tracker         tracker
-	state int
-
+	state           int
+	myState         torrentManagerStateI
 }
 
 func NewTorrentManager(torrentPath string) *TorrentManager {
 	manager := new(TorrentManager)
-	manager.torrent = newTorrent(torrentPath)
+	manager.torrent, _ = createNewTorrent(torrentPath)
 	manager.msgChan = make(chan BaseMsg)
-	manager.peerManager = newPeerManager(manager.msgChan,manager.torrent.InfoHashHex)
-	manager.tracker = newTracker(manager.torrent.AnnouncerUrl,manager.torrent.InfoHashHex,manager.peerManager)
+	manager.peerManager = newPeerManager(manager.msgChan, manager.torrent.InfoHashHex)
+	manager.tracker = newTracker(manager.torrent.AnnouncerUrl, manager.torrent.InfoHashHex, manager.peerManager)
 
-	manager.torrentState = Stopped
-	manager.stateChan = make(chan int,1)
+	manager.torrentState = StopTorrent
+	manager.myState = &StoppedStated{manager: manager}
+
+	manager.stateChan = make(chan int, 1)
 	return manager
 }
 
-func (manager TorrentManager) SetState(state int)  {
+type startedStated struct {
+	manager *TorrentManager
+	cancelRoutines context.CancelFunc
+}
+
+func (state startedStated) start() {
+	log.Printf("manager is already started")
+
+}
+
+func (state startedStated) stop() {
+	state.cancelRoutines()
+	state.manager.myState = &StoppedStated{manager: state.manager}
+}
+
+func (state startedStated) complete() {
+	panic("implement me")
+}
+
+type StoppedStated struct {
+	manager *TorrentManager
+}
+
+func (state StoppedStated) start() {
+
+	ctx, cancelRoutine := context.WithCancel(context.TODO())
+
+	go state.manager.msgRouter(ctx)
+	go state.manager.peerManager.receiveOperation(ctx)
+	go state.manager.tracker.starTracker(ctx)
+	state.manager.peerManager.peerOperationReceiver <- startServer{
+		swarm: state.manager.peerManager,
+	}
+	state.manager.myState = &startedStated{manager: state.manager,cancelRoutines: cancelRoutine}
+
+	log.Printf("new state: %v", reflect.TypeOf(state.manager.myState))
+}
+
+func (state StoppedStated) stop() {
+	log.Printf("manager is already stopped")
+}
+
+func (state StoppedStated) complete() {
+	panic("implement me")
+}
+
+func (manager *TorrentManager) SetState(state int) {
 	manager.stateChan <- state
 }
 
-func (manager TorrentManager) Init() {
+func (manager *TorrentManager) Init() {
 
-	ctx := context.TODO()
-	cancellableCtx, _ := context.WithCancel(ctx)
 	for {
 		manager.state = <-manager.stateChan
-		log.Printf("new state : %v",manager.state)
+		log.Printf("new state : %v", manager.state)
 		switch manager.state {
-		case Started:
-			go manager.msgRouter(cancellableCtx)
-			go manager.peerManager.receiveOperation(cancellableCtx)
-			go manager.tracker.starTracker(cancellableCtx)
-			manager.peerManager.peerOperationReceiver <- startServer{
-				swarm: manager.peerManager,
-			}
-		case Stopped:
-			//cancelRoutine()
-
-		case Completed:
+		case StartTorrent:
+			manager.myState.start()
+		case StopTorrent:
+			manager.myState.stop()
+		case CompleteTorrent:
 			close(manager.stateChan)
 		}
 	}
 
 }
 
-func (manager TorrentManager ) Stop()  {
+func (manager TorrentManager) Stop() {
 	close(manager.stateChan)
 }
 
 func (manager *TorrentManager) runPeriodicDownloader() {
 
 }
-
 func (manager *TorrentManager) msgRouter(ctx context.Context) {
 
 	for {
 
 		select {
-		case <- ctx.Done():
+		case <-ctx.Done():
 			return
 		case msg := <-manager.msgChan:
 			msg.handleMsg(manager)
@@ -186,7 +230,6 @@ func (manager *TorrentManager) msgRouter(ctx context.Context) {
 	}
 	*/
 }
-
 
 func (manager *TorrentManager) handleUnInterestedMsg(msg UnInterestedMsg) {
 }

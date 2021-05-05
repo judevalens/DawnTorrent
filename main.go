@@ -33,7 +33,7 @@ func main() {
 	torrentPath := "files/ubuntu-20.04-desktop-amd64.iso.torrent"
 	 manager1 := protocol.NewTorrentManager(torrentPath)
 	go manager1.Init()
-	 manager1.SetState(protocol.Started)
+	 manager1.SetState(protocol.StartTorrent)
 	println("non blocking")
 
 	/*

@@ -11,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"reflect"
 	"strconv"
 	"time"
 )
@@ -21,7 +22,7 @@ const (
 )
 
 const (
-	httpScheme = "http"
+	httpScheme = "https"
 	udpScheme  = "udp"
 )
 
@@ -38,7 +39,7 @@ type tracker interface {
 
 type baseTracker struct {
 	state       trackerRequestState
-	infoHash string
+	infoHash 	string
 	trackerURL  *url.URL
 	interval    time.Duration
 	timer       *time.Timer
@@ -59,52 +60,51 @@ func newTracker(announcerUrlString ,infoHash string, peerManager *peerManager) t
 		trackerURL:  trackerURL,
 		timer:       time.NewTimer(time.Nanosecond),
 	}
-
+	log.Printf("url: %v, url scheme : %v",announcerUrlString,trackerURL.Scheme )
 	if trackerURL.Scheme == httpScheme {
-		tracker = httpTracker2{
-			baseTracker: baseTracker,
+		tracker = &httpTracker2{
+			baseTracker: &baseTracker,
 		}
 	} else {
-		tracker = udpTracker2{
-			baseTracker: baseTracker,
+		tracker = &udpTracker2{
+			baseTracker: &baseTracker,
 		}
 	}
+
+	log.Printf("creating new tracker: %v", reflect.TypeOf(tracker))
 
 	return tracker
 }
 
-func (t baseTracker) handleRequest() (int, error) {
+func (t *baseTracker) handleRequest() (int, error) {
 	panic("implement me")
 }
 
-func (t baseTracker) getCurrentState() string {
+func (t *baseTracker) getCurrentState() string {
 	return ""
 }
 
-func (t baseTracker) getAnnouncerUrl() *url.URL {
+func (t *baseTracker) getAnnouncerUrl() *url.URL {
 	return nil
 }
-func (t baseTracker) getInfoHash() string {
+func (t *baseTracker) getInfoHash() string {
 	return ""
 }
 
-func (t baseTracker) getTransferStats() (int, int, int) {
+func (t *baseTracker) getTransferStats() (int, int, int) {
 	return 0, 0, 0
 }
 
-func (t baseTracker) starTracker(ctx context.Context) {
-	defer func() {
-		<- ctx.Done()
-		t.state.cancel()
-	}()
-	t.state = initialRequest{}
+func (t *baseTracker) starTracker(ctx context.Context) {
+
+	t.state = &initialRequest{}
 	t.state.handle()
 }
 
-func (t baseTracker) stopTracker() {
+func (t *baseTracker) stopTracker() {
 	t.state.cancel()
 }
-func (t baseTracker) resetTracker(duration time.Duration) {
+func (t *baseTracker) resetTracker(duration time.Duration) {
 	t.state.reset(duration)
 }
 
@@ -118,24 +118,26 @@ type initialRequest struct {
 	tracker baseTracker
 }
 
-func (i initialRequest) handle() {
-
+func (i *initialRequest) handle() {
+	log.Printf("trackerUrl: %v", i.tracker.trackerURL.String())
+	log.Printf("sending initial 2 tracker request, trackerType : %v", reflect.TypeOf(i.tracker))
 	interval, err := i.tracker.handleRequest()
 	if err != nil {
+		log.Fatalf("err:  %v",err)
 		return
 	}
 	i.tracker.interval = time.Duration(interval)
-	i.tracker.state = recurringRequest{}
+	i.tracker.state = &recurringRequest{}
 	log.Print("launching tracker request")
 	i.tracker.state.handle()
 
 }
 
-func (i initialRequest) cancel() {
+func (i *initialRequest) cancel() {
 
 }
 
-func (i initialRequest) reset(time.Duration) {
+func (i *initialRequest) reset(time.Duration) {
 
 }
 
@@ -143,36 +145,38 @@ type recurringRequest struct {
 	tracker baseTracker
 }
 
-func (r recurringRequest) handle() {
+func (r *recurringRequest) handle() {
 
 		r.tracker.timer = time.AfterFunc(r.tracker.interval, func() {
+			log.Printf("sending initial tracker request, trackerType : %v", reflect.TypeOf(r.tracker))
+
 			interval, err := r.tracker.handleRequest()
 			if err != nil {
 				return
 			}
 
 			r.tracker.interval = time.Duration(interval)
-			r.tracker.state = recurringRequest{tracker: r.tracker}
+			r.tracker.state = &recurringRequest{tracker: r.tracker}
 			r.handle()
 		})
 
 }
 
-func (r recurringRequest) cancel() {
+func (r *recurringRequest) cancel() {
 	r.tracker.timer.Stop()
-	r.tracker.state = initialRequest{}
+	r.tracker.state = &initialRequest{}
 }
 
-func (r recurringRequest) reset(duration time.Duration) {
+func (r *recurringRequest) reset(duration time.Duration) {
 	r.tracker.timer.Stop()
 	r.tracker.timer.Reset(duration)
 }
 
 type httpTracker2 struct {
-	baseTracker
+	*baseTracker
 }
 
-func (trp httpTracker2) execRequest() (*parser.BMap, error) {
+func (trp *httpTracker2) execRequest() (*parser.BMap, error) {
 	myID := utils.MyID
 
 	event := trp.getCurrentState()
@@ -211,7 +215,8 @@ func (trp httpTracker2) execRequest() (*parser.BMap, error) {
 	return nil, nil
 }
 
-func (trp httpTracker2) handleRequest() (int, error) {
+func (trp *httpTracker2) handleRequest() (int, error) {
+	print("hello from http handle request")
 	var peers []*Peer
 	trackerResponse, err := trp.execRequest()
 	if err != nil {
@@ -232,10 +237,10 @@ func (trp httpTracker2) handleRequest() (int, error) {
 }
 
 type udpTracker2 struct {
-	baseTracker
+	*baseTracker
 }
 
-func (trp udpTracker2) handleRequest() (int, error) {
+func (trp *udpTracker2) handleRequest() (int, error) {
 	var peers []*Peer
 	trackerResponse, err := trp.execRequest()
 	if err != nil {
@@ -254,7 +259,7 @@ func (trp udpTracker2) handleRequest() (int, error) {
 
 	return 0, nil
 }
-func (trp udpTracker2) execRequest() (*PeerProtocol.UdpMSG, error) {
+func (trp *udpTracker2) execRequest() (*PeerProtocol.UdpMSG, error) {
 
 	/*	// TODO this needs to be moved
 		ipByte := make([]byte, 0)
