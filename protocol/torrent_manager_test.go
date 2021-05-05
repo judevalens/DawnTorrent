@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"github.com/stretchr/testify/assert"
+	"strconv"
 	"testing"
 )
 
@@ -19,7 +20,7 @@ func TestNewTorrent(t *testing.T) {
 	announcerUrl := "https://torrent.ubuntu.com/announce"
 	announcerUrlList := []string{"https://torrent.ubuntu.com/announce","https://ipv6.torrent.ubuntu.com/announce"}
 	infoHash := "9fc20b9e98ea98b4a35e6223041a5ef94ea27809"
-
+	torentSize := "2715254784"
 	var tests = []struct{
 		expected,actual string
 	}{
@@ -28,6 +29,7 @@ func TestNewTorrent(t *testing.T) {
 		{announcerUrlList[0],torrent.AnnounceList[0]},
 		{announcerUrlList[1],torrent.AnnounceList[1]},
 		{infoHash,torrent.InfoHashHex},
+		{torentSize,strconv.Itoa(torrent.FileLength)},
 	}
 
 	for _, test := range  tests{
