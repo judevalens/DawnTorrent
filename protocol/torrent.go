@@ -68,8 +68,6 @@ func createNewTorrent(torrentPath string) (*Torrent,error) {
 	torrentFile.infoHashByte = infoHashByte
 	torrentFile.InfoHashHex = hexInfoHash
 	torrentFile.AnnouncerUrl = torrentMap.Strings["announce"]
-	fmt.Printf("%v",torrentMap.BLists["announce-list"].BLists[0].Strings)
-
 	torrentFile.AnnounceList = make([]string,len(torrentMap.BLists["announce-list"].BLists))
 
 	for i,announcerUrl := range torrentMap.BLists["announce-list"].BLists{
@@ -79,6 +77,7 @@ func createNewTorrent(torrentPath string) (*Torrent,error) {
 
 	torrentFile.CreationDate = torrentMap.Strings["creation date"]
 	torrentFile.Encoding = torrentMap.Strings["encoding"]
+	torrentFile.FileLength, _ = strconv.Atoi(torrentMap.BMaps["info"].Strings["length"])
 	torrentFile.piecesHash = torrentMap.BMaps["info"].Strings["pieces"]
 	torrentFile.pieceLength, _ = strconv.Atoi(torrentMap.BMaps["info"].Strings["piece length"])
 

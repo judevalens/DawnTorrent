@@ -20,7 +20,7 @@ func TestNewTorrent(t *testing.T) {
 	announcerUrl := "https://torrent.ubuntu.com/announce"
 	announcerUrlList := []string{"https://torrent.ubuntu.com/announce","https://ipv6.torrent.ubuntu.com/announce"}
 	infoHash := "9fc20b9e98ea98b4a35e6223041a5ef94ea27809"
-	torentSize := "2715254784"
+	torrentSize := "2715254784"
 	var tests = []struct{
 		expected,actual string
 	}{
@@ -29,7 +29,7 @@ func TestNewTorrent(t *testing.T) {
 		{announcerUrlList[0],torrent.AnnounceList[0]},
 		{announcerUrlList[1],torrent.AnnounceList[1]},
 		{infoHash,torrent.InfoHashHex},
-		{torentSize,strconv.Itoa(torrent.FileLength)},
+		{torrentSize,strconv.Itoa(torrent.FileLength)},
 	}
 
 	for _, test := range  tests{
@@ -37,7 +37,25 @@ func TestNewTorrent(t *testing.T) {
 	}
 }
 
-func TestCreateTracker(t *testing.T){
+ func TestTorrentManager_Init(t *testing.T) {
+	 testTorrent := "../files/ubuntu-20.04-desktop-amd64.iso.torrent"
 
+	 manager := NewTorrentManager(testTorrent)
+	 manager.Init()
+ }
+
+func TestTracker(t *testing.T){
+	var err error
+	testTorrent := "../files/ubuntu-20.04-desktop-amd64.iso.torrent"
+	torrent, err := createNewTorrent(testTorrent)
+
+	if err != nil{
+		assert.Fail(t, err.Error())
+	}
+
+	peerManager := newPeerManager()
+
+
+
+	tracker := newTracker(torrent)
 }
-

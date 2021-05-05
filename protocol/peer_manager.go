@@ -12,49 +12,26 @@ import (
 	_ "os"
 	"strconv"
 	_ "strconv"
-	"time"
 )
 
-const (
-	AddPeer                          = iota
-	ConnectToPeer                    = iota
-	IncomingConnection               = iota
-	RemovePeer                       = iota
-	AddActivePeer                    = iota
-	SortPeerByDownloadRate           = iota
-	RemovePendingRequest             = iota
-	isPeerFree                       = iota
-	startReceivingIncomingConnection = iota
-	stopReceivingIncomingConnection  = iota
-)
 
 type peerManager struct {
-	torrentManager      *TorrentManager
 	activePeers         map[string]*Peer
 	Peers               []*Peer
 	PeersMap            map[string]*Peer
-	interestedPeerIndex []int
-	interestedPeerMap   map[string]*Peer
-	interestingPeer     map[string]*Peer
-	unChockedPeer       []*Peer
-	unChockedPeerMap    map[string]*Peer
+
 
 	nActiveConnection           int
 	maxConnection               int
-	torrent                     *Torrent
-	trackerInterval             int
 	peerOperationReceiver       chan PeerOperation
-	lastSelectedPeer            int
-	trackerRequestChan          time.Ticker
-	initialTrackerRequest       chan interface{}
-	stopTrackerRequest          chan interface{}
-	receivingIncomingConnection bool
+	msgReceiver                 chan BaseMsg
 	server                      *net.TCPListener
+	InfoHashHex string
 }
 
-func newPeerManager() peerManager {
-	peerManager := peerManager{}
-
+func newPeerManager(msgReceiver chan BaseMsg,infoHash string) *peerManager {
+	peerManager := new(peerManager)
+	peerManager.msgReceiver = msgReceiver
 	return peerManager
 }
 
@@ -85,7 +62,7 @@ func (peerSwarm *peerManager) handleNewPeer(connection *net.TCPConn) {
 
 	remotePeerAddr, _ := net.ResolveTCPAddr("tcp", connection.RemoteAddr().String())
 
-	_, err = connection.Write(newHandShakeMsg(peerSwarm.torrent.InfoHashHex, ""))
+	_, err = connection.Write(newHandShakeMsg(peerSwarm.InfoHashHex, ""))
 
 	if err == nil {
 
@@ -95,7 +72,7 @@ func (peerSwarm *peerManager) handleNewPeer(connection *net.TCPConn) {
 		peerSwarm.peerOperationReceiver <- addPeerOperation{
 			peer:  newPeer,
 			swarm: peerSwarm,
-			msgReceiver: peerSwarm.torrentManager.msgChan,
+			msgReceiver: peerSwarm.msgReceiver,
 		}
 
 	}
@@ -110,7 +87,7 @@ func (peerSwarm *peerManager) connect(peer *Peer) {
 		_ = connection.SetKeepAlive(true)
 		_ = connection.SetKeepAlivePeriod(utils.KeepAliveDuration)
 		fmt.Printf("keep ALive %v", utils.KeepAliveDuration)
-		_, err := connection.Write(newHandShakeMsg(peerSwarm.torrent.InfoHashHex, ""))
+		_, err := connection.Write(newHandShakeMsg(peerSwarm.InfoHashHex, ""))
 
 		if err != nil {
 			log.Fatal(err)
@@ -125,7 +102,7 @@ func (peerSwarm *peerManager) connect(peer *Peer) {
 				log.Fatal(handShakeMsgErr)
 			}
 
-			if handShakeMsg.infoHash != peerSwarm.torrent.InfoHashHex {
+			if handShakeMsg.infoHash != peerSwarm.InfoHashHex {
 				return
 			}
 
@@ -133,7 +110,7 @@ func (peerSwarm *peerManager) connect(peer *Peer) {
 			peerSwarm.peerOperationReceiver <- addPeerOperation{
 				peer:  peer,
 				swarm: peerSwarm,
-				msgReceiver: peerSwarm.torrentManager.msgChan,
+				msgReceiver: peerSwarm.msgReceiver,
 			}
 		}
 	} else {
