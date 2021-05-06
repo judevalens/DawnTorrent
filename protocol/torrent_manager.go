@@ -28,7 +28,7 @@ type TorrentManager struct {
 	totalDownloaded int
 	left            int
 	stateChan       chan int
-	tracker         tracker
+	scrapper         *Scrapper
 	state           int
 	myState         torrentManagerStateI
 }
@@ -38,7 +38,13 @@ func NewTorrentManager(torrentPath string) *TorrentManager {
 	manager.torrent, _ = createNewTorrent(torrentPath)
 	manager.msgChan = make(chan BaseMsg)
 	manager.peerManager = newPeerManager(manager.msgChan, manager.torrent.InfoHashHex)
-	manager.tracker = newTracker(manager.torrent.AnnouncerUrl, manager.torrent.InfoHashHex, manager.peerManager)
+	newScrapper, err := newTracker(manager.torrent.AnnouncerUrl, manager.torrent.InfoHashHex, manager.peerManager)
+
+	if err != nil{
+		log.Fatal(err)
+	}
+
+	manager.scrapper = newScrapper
 
 	manager.torrentState = StopTorrent
 	manager.myState = &StoppedStated{manager: manager}
@@ -46,6 +52,9 @@ func NewTorrentManager(torrentPath string) *TorrentManager {
 	manager.stateChan = make(chan int, 1)
 	return manager
 }
+
+
+
 
 type startedStated struct {
 	manager *TorrentManager
@@ -76,7 +85,7 @@ func (state StoppedStated) start() {
 
 	go state.manager.msgRouter(ctx)
 	go state.manager.peerManager.receiveOperation(ctx)
-	go state.manager.tracker.starTracker(ctx)
+	go state.manager.scrapper.startScrapper(ctx)
 	state.manager.peerManager.peerOperationReceiver <- startServer{
 		swarm: state.manager.peerManager,
 	}

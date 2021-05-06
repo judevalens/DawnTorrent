@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"DawnTorrent/protocol/scrapper"
 	"context"
 	"github.com/stretchr/testify/assert"
 	"strconv"
@@ -59,7 +60,7 @@ func TestTracker(t *testing.T){
 	peerManager := newPeerManager(nil,torrent.InfoHashHex)
 
 
-	_ = newTracker(torrent.AnnouncerUrl,torrent.InfoHashHex,peerManager)
+	_ = scrapper.newTracker(torrent.AnnouncerUrl,torrent.InfoHashHex,peerManager)
 	_ = context.Background()
 
 }

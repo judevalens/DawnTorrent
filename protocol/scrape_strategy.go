@@ -4,176 +4,21 @@ import (
 	"DawnTorrent/PeerProtocol"
 	"DawnTorrent/parser"
 	"DawnTorrent/utils"
-	"context"
 	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
-	"reflect"
 	"strconv"
-	"time"
 )
 
-const (
-	httpTracker = iota
-	udpTracker  = iota
-)
-
-const (
-	httpScheme = "https"
-	udpScheme  = "udp"
-)
-
-type tracker interface {
+type scrapeStrategy interface {
 	handleRequest() (int, error)
-	getCurrentState() string
-	getAnnouncerUrl() *url.URL
-	getInfoHash() string
-	getTransferStats() (int, int, int)
-	starTracker(ctx context.Context)
-	stopTracker()
-	resetTracker(duration time.Duration)
-}
-
-type baseTracker struct {
-	state       trackerRequestState
-	infoHash 	string
-	trackerURL  *url.URL
-	interval    time.Duration
-	timer       *time.Timer
-	peerManager *peerManager
-}
-
-func newTracker(announcerUrlString ,infoHash string, peerManager *peerManager) tracker {
-	var tracker tracker
-	trackerURL, err := url.Parse(announcerUrlString)
-
-	if err != nil {
-		return nil
-	}
-
-	baseTracker := baseTracker{
-		peerManager: peerManager,
-		infoHash: infoHash,
-		trackerURL:  trackerURL,
-		timer:       time.NewTimer(time.Nanosecond),
-	}
-	log.Printf("url: %v, url scheme : %v",announcerUrlString,trackerURL.Scheme )
-	if trackerURL.Scheme == httpScheme {
-		tracker = &httpTracker2{
-			baseTracker: &baseTracker,
-		}
-	} else {
-		tracker = &udpTracker2{
-			baseTracker: &baseTracker,
-		}
-	}
-
-	log.Printf("creating new tracker: %v", reflect.TypeOf(tracker))
-
-	return tracker
-}
-
-func (t *baseTracker) handleRequest() (int, error) {
-	panic("implement me")
-}
-
-func (t *baseTracker) getCurrentState() string {
-	return ""
-}
-
-func (t *baseTracker) getAnnouncerUrl() *url.URL {
-	return nil
-}
-func (t *baseTracker) getInfoHash() string {
-	return ""
-}
-
-func (t *baseTracker) getTransferStats() (int, int, int) {
-	return 0, 0, 0
-}
-
-func (t *baseTracker) starTracker(ctx context.Context) {
-
-	t.state = &initialRequest{}
-	t.state.handle()
-}
-
-func (t *baseTracker) stopTracker() {
-	t.state.cancel()
-}
-func (t *baseTracker) resetTracker(duration time.Duration) {
-	t.state.reset(duration)
-}
-
-type trackerRequestState interface {
-	handle()
-	cancel()
-	reset(duration time.Duration)
-}
-
-type initialRequest struct {
-	tracker baseTracker
-}
-
-func (i *initialRequest) handle() {
-	log.Printf("trackerUrl: %v", i.tracker.trackerURL.String())
-	log.Printf("sending initial 2 tracker request, trackerType : %v", reflect.TypeOf(i.tracker))
-	interval, err := i.tracker.handleRequest()
-	if err != nil {
-		log.Fatalf("err:  %v",err)
-		return
-	}
-	i.tracker.interval = time.Duration(interval)
-	i.tracker.state = &recurringRequest{}
-	log.Print("launching tracker request")
-	i.tracker.state.handle()
-
-}
-
-func (i *initialRequest) cancel() {
-
-}
-
-func (i *initialRequest) reset(time.Duration) {
-
-}
-
-type recurringRequest struct {
-	tracker baseTracker
-}
-
-func (r *recurringRequest) handle() {
-
-		r.tracker.timer = time.AfterFunc(r.tracker.interval, func() {
-			log.Printf("sending initial tracker request, trackerType : %v", reflect.TypeOf(r.tracker))
-
-			interval, err := r.tracker.handleRequest()
-			if err != nil {
-				return
-			}
-
-			r.tracker.interval = time.Duration(interval)
-			r.tracker.state = &recurringRequest{tracker: r.tracker}
-			r.handle()
-		})
-
-}
-
-func (r *recurringRequest) cancel() {
-	r.tracker.timer.Stop()
-	r.tracker.state = &initialRequest{}
-}
-
-func (r *recurringRequest) reset(duration time.Duration) {
-	r.tracker.timer.Stop()
-	r.tracker.timer.Reset(duration)
 }
 
 type httpTracker2 struct {
-	*baseTracker
+	*Scrapper
 }
 
 func (trp *httpTracker2) execRequest() (*parser.BMap, error) {
@@ -223,21 +68,30 @@ func (trp *httpTracker2) handleRequest() (int, error) {
 		return 0, nil
 	}
 
-	peers = trp.baseTracker.createPeersFromHTTPTracker(trackerResponse.BLists["peers"].BMaps)
+	peers = trp.createPeersFromHTTPTracker(trackerResponse.BLists["peers"].BMaps)
 
 	for _, peer := range peers {
 		operation := addPeerOperation{
 			peer:  peer,
-			swarm: trp.baseTracker.peerManager,
+			swarm: trp.Scrapper.peerManager,
 		}
-		trp.baseTracker.peerManager.peerOperationReceiver <- operation
+		trp.Scrapper.peerManager.peerOperationReceiver <- operation
 	}
 
 	return 0, nil
 }
+func (trp *httpTracker2) createPeersFromHTTPTracker(peersInfo []*parser.BMap) []*Peer {
+	var peers []*Peer
+	for _, peerDict := range peersInfo {
+		peer := NewPeer(peerDict.Strings["ip"], peerDict.Strings["port"], peerDict.Strings["peer id"])
+		peers = append(peers, peer)
+		//go peerSwarm.connect(peer)
+	}
+	return peers
+}
 
 type udpTracker2 struct {
-	*baseTracker
+	*Scrapper
 }
 
 func (trp *udpTracker2) handleRequest() (int, error) {
@@ -247,18 +101,20 @@ func (trp *udpTracker2) handleRequest() (int, error) {
 		return 0, nil
 	}
 
-	peers = trp.baseTracker.createPeersFromUDPTracker(trackerResponse.PeersAddresses)
+	peers = trp.createPeersFromUDPTracker(trackerResponse.PeersAddresses)
 
 	for _, peer := range peers {
 		operation := addPeerOperation{
 			peer:  peer,
-			swarm: trp.baseTracker.peerManager,
+			swarm: trp.Scrapper.peerManager,
 		}
-		trp.baseTracker.peerManager.peerOperationReceiver <- operation
+		trp.Scrapper.peerManager.peerOperationReceiver <- operation
 	}
 
 	return 0, nil
 }
+
+
 func (trp *udpTracker2) execRequest() (*PeerProtocol.UdpMSG, error) {
 
 	/*	// TODO this needs to be moved
@@ -377,17 +233,7 @@ func (trp *udpTracker2) execRequest() (*PeerProtocol.UdpMSG, error) {
 	return nil, nil
 }
 
-func (t *baseTracker) createPeersFromHTTPTracker(peersInfo []*parser.BMap) []*Peer {
-	var peers []*Peer
-	for _, peerDict := range peersInfo {
-		peer := NewPeer(peerDict.Strings["ip"], peerDict.Strings["port"], peerDict.Strings["peer id"])
-		peers = append(peers, peer)
-		//go peerSwarm.connect(peer)
-	}
-	return peers
-}
-
-func (t *baseTracker) createPeersFromUDPTracker(peersAddress []byte) []*Peer {
+func (trp *udpTracker2) createPeersFromUDPTracker(peersAddress []byte) []*Peer {
 	var peers []*Peer
 	i := 0
 	for i < len(peersAddress) {
