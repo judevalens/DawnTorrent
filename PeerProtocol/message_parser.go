@@ -376,21 +376,7 @@ func parseUdpTrackerResponse(msg []byte,msgSize int) (UdpMSG,error){
 	return msgStruct,err
 }
 
-func intToByte(n int, nByte int) []byte {
-	b := make([]byte, nByte)
-		if nByte < 2 {
-			binary.PutUvarint(b, uint64(n))
-		} else if nByte >= 2 && nByte < 4 {
-			binary.BigEndian.PutUint16(b, uint16(n))
-		} else if nByte >= 4 && nByte < 8 {
-			binary.BigEndian.PutUint32(b, uint32(n))
-		} else if nByte == 8 {
-			binary.BigEndian.PutUint64(b, uint64(n))
-		}
 
-	return b
-
-}
 
 func isInBound(msg []byte,start,end int)error {
 	if start < len(msg) || end > len(msg) {

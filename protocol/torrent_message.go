@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"DawnTorrent/utils"
 	"bytes"
 	"encoding/binary"
 	"errors"
@@ -8,26 +9,17 @@ import (
 )
 
 const (
-	HandShakeMsgID         = 19
-	ChokeMsgId             = 0
-	UnChokeMsgId           = 1
-	InterestedMsgId          = 2
-	UnInterestedMsgId        = 3
-	HaveMsgId                = 4
-	BitfieldMsgId            = 5
-	RequestMsgId             = 6
-	PieceMsgId              = 7
-	CancelMsgId              = 8
-	DefaultMsgID           = 0
-	udpProtocolID      int = 0x41727101980
-	udpConnectRequest      = 0
-	udpAnnounceRequest     = 1
-	udpScrapeRequest       = 2
-	udpError               = 3
-	udpNoneEvent           = 0
-
-	incomingMsg = 1
-	outgoingMsg = -1
+	HandShakeMsgId       = 19
+	ChokeMsgId           = 0
+	UnChokeMsgId         = 1
+	InterestedMsgId      = 2
+	UnInterestedMsgId    = 3
+	HaveMsgId            = 4
+	BitfieldMsgId        = 5
+	RequestMsgId         = 6
+	PieceMsgId           = 7
+	CancelMsgId          = 8
+	BittorrentIdentifier = "BitTorrent protocol"
 )
 
 const (
@@ -35,22 +27,8 @@ const (
 )
 
 var (
-	keepALiveMsgLen        = 0
-	BitFieldMsgLen         = 1
-	chokeMsgLen            = 1
-	unChokeMsgLen          = 1
-	interestedMsgLen       = 1
-	UninterestedMsgLen     = 1
-	haveMsgLen             = 5
-	requestMsgLen          = 13
-	cancelMsgLen           = 13
-	pieceLen               = 9
-	portMsgLen             = []byte{0, 0, 0, 3}
-	HandShakePrefixLength  = 19
-	BittorrentIdentifier   = "BitTorrent protocol"
-	BitTorrentReservedByte = []byte{0, 0, 0, 0, 0, 0, 0, 0}
-	MaxMsgSize             = 2000
-	maxPiece               byte
+	MaxMsgSize = 2000
+	maxPiece   byte
 )
 
 type BaseMsg interface {
@@ -79,7 +57,13 @@ func newHandShakeMsg(infohash string, peerID string) []byte {
 }
 
 func (h HandShake) marshal() []byte {
-	return bytes.Join([][]byte{{byte(HandShakeMsgID)}, []byte(BittorrentIdentifier), BitTorrentReservedByte, []byte(h.infoHash), []byte(h.peerID)}, []byte(""))
+	return bytes.Join([][]byte{
+		{byte(HandShakeMsgId)},
+		[]byte(BittorrentIdentifier),
+		make([]byte, 8),
+		[]byte(h.infoHash),
+		[]byte(h.peerID)},
+		[]byte(""))
 }
 func (h HandShake) handleMsg(*TorrentManager) {
 }
@@ -272,4 +256,112 @@ func ParseMsg(msg []byte, peer *Peer) (BaseMsg, error) {
 	}
 
 	return nil, nil
+}
+
+const (
+	udpProtocolId      int = 0x41727101980
+	udpConnectRequest      = 0
+	udpAnnounceRequest     = 1
+	udpScrapeRequest       = 2
+	udpError               = 3
+	udpNoneEvent           = 0
+)
+
+type baseUdpMsg struct {
+	action        int
+	connectionID  int
+	transactionID int
+}
+
+type announceUdpMsg struct {
+	baseUdpMsg
+	infohash   string
+	peerId     string
+	downloaded int
+	uploaded   int
+	left       int
+	event      int
+	key        int
+	numWant    int
+	port       int
+	ip         int
+}
+
+type announceResponseUdpMsg struct {
+	baseUdpMsg
+	interval       int
+	nLeechers      int
+	nSeeders       int
+	peersAddresses []byte
+}
+
+func newUdpConnectionRequest(transactionId int) []byte {
+	return bytes.Join([][]byte{utils.IntToByte(udpProtocolId, 8), utils.IntToByte(udpConnectRequest, 4), utils.IntToByte(int(transactionId), 4)}, []byte{})
+}
+
+func newUdpAnnounceRequest(msg announceUdpMsg) []byte {
+
+	return bytes.Join([][]byte{
+		utils.IntToByte(msg.connectionID, 8),
+		utils.IntToByte(msg.action, 4),
+		utils.IntToByte(msg.transactionID, 4),
+		[]byte(msg.infohash), []byte(msg.peerId),
+		utils.IntToByte(msg.downloaded, 8),
+		utils.IntToByte(msg.left, 8),
+		utils.IntToByte(msg.uploaded, 8),
+		utils.IntToByte(msg.event, 4),
+		utils.IntToByte(msg.ip, 4), utils.IntToByte(msg.key, 4),
+		utils.IntToByte(msg.numWant, 4),
+		utils.IntToByte(msg.port, 2)}, []byte{})
+}
+
+func parseUdpConnectionResponse(msg []byte) baseUdpMsg {
+
+	return baseUdpMsg{
+		action:        int(binary.BigEndian.Uint32(msg[0:4])),
+		transactionID: int(binary.BigEndian.Uint32(msg[4:8])),
+		connectionID:  int(binary.BigEndian.Uint64(msg[8:16])),
+	}
+}
+
+func parseUdpTrackerResponse(msg []byte, msgSize int) (UdpMSG, error) {
+	msgStruct := UdpMSG{}
+	var err error
+
+	if msgSize >= 16 {
+		msgStruct.action = int(binary.BigEndian.Uint32(msg[0:4]))
+		msgStruct.transactionID = int(binary.BigEndian.Uint32(msg[4:8]))
+
+		if msgStruct.action == udpConnectRequest {
+			msgStruct.connectionID = int(binary.BigEndian.Uint64(msg[8:16]))
+		} else if msgStruct.action == udpAnnounceRequest {
+			if msgSize > 20 {
+				msgStruct.Interval = int(binary.BigEndian.Uint32(msg[8:12]))
+				msgStruct.leechers = int(binary.BigEndian.Uint32(msg[12:16]))
+				msgStruct.seeders = int(binary.BigEndian.Uint32(msg[16:20]))
+				msgStruct.PeersAddresses = msg[20:msgSize]
+			} else {
+				err = errors.New("udp msg er | length too short 2")
+
+			}
+		}
+	} else {
+		err = errors.New("udp msg er | length too short 1 ")
+	}
+	return msgStruct, err
+}
+
+func parseAnnounceResponseUdpMsg(msg []byte, msgSize int) announceResponseUdpMsg {
+	announceResponse := announceResponseUdpMsg{
+		baseUdpMsg: baseUdpMsg{
+			action:        int(binary.BigEndian.Uint32(msg[0:4])),
+			transactionID: int(binary.BigEndian.Uint32(msg[4:8])),
+		},
+		interval:       int(binary.BigEndian.Uint32(msg[8:12])),
+		nLeechers:      int(binary.BigEndian.Uint32(msg[12:16])),
+		nSeeders:       int(binary.BigEndian.Uint32(msg[16:20])),
+		peersAddresses: msg[20:msgSize],
+	}
+
+	return announceResponse
 }

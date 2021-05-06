@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"reflect"
+	"sync"
 )
 
 const (
@@ -16,6 +17,7 @@ type torrentManagerStateI interface {
 	start()
 	stop()
 	complete()
+	getState() int
 }
 
 type TorrentManager struct {
@@ -28,6 +30,7 @@ type TorrentManager struct {
 	totalDownloaded int
 	left            int
 	stateChan       chan int
+	stateLock 		*sync.Mutex
 	scrapper         *Scrapper
 	state           int
 	myState         torrentManagerStateI
@@ -38,7 +41,7 @@ func NewTorrentManager(torrentPath string) *TorrentManager {
 	manager.torrent, _ = createNewTorrent(torrentPath)
 	manager.msgChan = make(chan BaseMsg)
 	manager.peerManager = newPeerManager(manager.msgChan, manager.torrent.InfoHashHex)
-	newScrapper, err := newTracker(manager.torrent.AnnouncerUrl, manager.torrent.InfoHashHex, manager.peerManager)
+	newScrapper, err := newTracker(manager.torrent.AnnouncerUrl, manager.torrent.InfoHashHex,manager, manager.peerManager)
 
 	if err != nil{
 		log.Fatal(err)
@@ -53,12 +56,13 @@ func NewTorrentManager(torrentPath string) *TorrentManager {
 	return manager
 }
 
-
-
-
 type startedStated struct {
 	manager *TorrentManager
 	cancelRoutines context.CancelFunc
+}
+
+func (state startedStated) getState() int {
+	return CompleteTorrent
 }
 
 func (state startedStated) start() {
@@ -79,11 +83,15 @@ type StoppedStated struct {
 	manager *TorrentManager
 }
 
+func (state StoppedStated) getState() int {
+	return StopTorrent
+}
+
 func (state StoppedStated) start() {
 
 	ctx, cancelRoutine := context.WithCancel(context.TODO())
 
-	go state.manager.msgRouter(ctx)
+	//go state.manager.msgRouter()
 	go state.manager.peerManager.receiveOperation(ctx)
 	go state.manager.scrapper.startScrapper(ctx)
 	state.manager.peerManager.peerOperationReceiver <- startServer{
@@ -105,6 +113,11 @@ func (state StoppedStated) complete() {
 func (manager *TorrentManager) SetState(state int) {
 	manager.stateChan <- state
 }
+func (manager *TorrentManager) getState() int{
+	return manager.myState.getState()
+}
+
+
 
 func (manager *TorrentManager) Init() {
 

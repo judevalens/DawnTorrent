@@ -2,6 +2,7 @@ package utils
 
 import (
 	"crypto/sha1"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"log"
@@ -32,7 +33,7 @@ const (
 
 var LocalAddr, _ = net.ResolveTCPAddr("tcp", LocalAddress().String()+":"+strconv.Itoa(PORT2))
 var LocalAddr2, _ = net.ResolveTCPAddr("tcp", ":"+strconv.Itoa(PORT))
-var MyID = GetRandomId()
+var MyID = GetRandomId(20)
 
 var KeepAliveDuration, _ = time.ParseDuration("120s")
 
@@ -42,11 +43,11 @@ var TorrentHomeDir = filepath.FromSlash(homeDir + "/DawnTorrent/files")
 
 var SavedTorrentDir = filepath.FromSlash(homeDir + "/DawnTorrent/torrents")
 
-func GetRandomId() string {
-	PeerIDLength := 20
+func GetRandomId(s int) string {
+
 
 	randomSeed := rand.New(rand.NewSource(time.Now().UnixNano()))
-	peerIDRandom := randomSeed.Perm(PeerIDLength)
+	peerIDRandom := randomSeed.Perm(s/2)
 
 	fmt.Printf("%v", peerIDRandom)
 	var peerIDRandomArr []byte
@@ -57,11 +58,8 @@ func GetRandomId() string {
 		peerIDRandomArr = append(peerIDRandomArr, byte(n))
 	}
 
-	x := (PeerIDLength * PeerIDLength) / hex.EncodedLen(PeerIDLength)
-
 	peerIDRandomSha := sha1.Sum(peerIDRandomArr)
-	peerIDRandomShaSlice := peerIDRandomSha[:x]
-	peerId = hex.EncodeToString(peerIDRandomShaSlice)
+	peerId = hex.EncodeToString(peerIDRandomSha[:])
 	return peerId
 }
 
@@ -142,7 +140,21 @@ func flipBit(b uint8) uint8 {
 	a = a &^ b
 	return a
 }
+func IntToByte(n int, nByte int) []byte {
+	b := make([]byte, nByte)
+	if nByte < 2 {
+		binary.PutUvarint(b, uint64(n))
+	} else if nByte >= 2 && nByte < 4 {
+		binary.BigEndian.PutUint16(b, uint16(n))
+	} else if nByte >= 4 && nByte < 8 {
+		binary.BigEndian.PutUint32(b, uint32(n))
+	} else if nByte == 8 {
+		binary.BigEndian.PutUint64(b, uint64(n))
+	}
 
+	return b
+
+}
 func GetPath(pathType int, path string, fileName string) string {
 	var path2 string
 	var pathRoot string
