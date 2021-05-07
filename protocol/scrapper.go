@@ -24,10 +24,11 @@ type Scrapper struct {
 	trackerUrls    []*url.URL
 	interval       time.Duration
 	timer          *time.Timer
+	manager        *TorrentManager
 	strategy       scrapeStrategy
 }
 
-func newTracker(announcerUrlString, infoHash string) (*Scrapper, error) {
+func newTracker(announcerUrlString, infoHash string, manager *TorrentManager) (*Scrapper, error) {
 	var baseTracker *Scrapper
 	trackerURL, err := url.Parse("udp://tracker.opentrackr.org:1337")
 
@@ -36,7 +37,6 @@ func newTracker(announcerUrlString, infoHash string) (*Scrapper, error) {
 	}
 	fmt.Printf("info hash : %v\n", infoHash)
 	baseTracker = &Scrapper{
-		peerManager:    peerManager,
 		infoHash:       infoHash,
 		mainTrackerUrl: trackerURL,
 		timer:          time.NewTimer(time.Nanosecond),

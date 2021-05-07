@@ -81,9 +81,9 @@ func (trp *httpTracker2) handleRequest() (int, error) {
 	for _, peer := range peers {
 		operation := addPeerOperation{
 			peer:  peer,
-			swarm: trp.Scrapper.peerManager,
+			swarm: trp.Scrapper.manager.peerManager,
 		}
-		trp.Scrapper.peerManager.peerOperationReceiver <- operation
+		trp.Scrapper.manager.peerManager.peerOperationReceiver <- operation
 	}
 
 	return 0, nil
@@ -124,9 +124,9 @@ func (trp *udpTracker2) handleRequest() (int, error) {
 
 	for _, peer := range peers {
 
-		trp.Scrapper.peerManager.peerOperationReceiver <- addPeerOperation{
+		trp.Scrapper.manager.peerManager.peerOperationReceiver <- addPeerOperation{
 			peer:  peer,
-			swarm: trp.Scrapper.peerManager,
+			swarm: trp.Scrapper.manager.peerManager,
 		}
 	}
 
@@ -209,7 +209,7 @@ func (trp *udpTracker2) sendAnnounceRequest(deadline time.Time, conn *net.UDPCon
 			ip: 0,
 			event:      0,
 			key:        2,
-			numWant: 	50 , //default
+			numWant: 	-1 , //default
 			port: utils.LocalAddr.Port,
 		})
 

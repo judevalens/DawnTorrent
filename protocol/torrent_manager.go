@@ -40,8 +40,8 @@ func NewTorrentManager(torrentPath string) *TorrentManager {
 	manager := new(TorrentManager)
 	manager.torrent, _ = createNewTorrent(torrentPath)
 	manager.msgChan = make(chan BaseMsg)
-	manager.peerManager = newPeerManager(manager.msgChan, manager.torrent.InfoHashHex)
-	newScrapper, err := newTracker(manager.torrent.AnnouncerUrl, manager.torrent.InfoHashHex,manager, manager.peerManager)
+	manager.peerManager = newPeerManager(manager.msgChan, manager.torrent.InfoHashHex,manager.torrent.infoHashByte[:])
+	newScrapper, err := newTracker(manager.torrent.AnnouncerUrl, manager.torrent.InfoHash,manager)
 
 	if err != nil{
 		log.Fatal(err)
@@ -94,9 +94,7 @@ func (state StoppedStated) start() {
 	//go state.manager.msgRouter()
 	go state.manager.peerManager.receiveOperation(ctx)
 	go state.manager.scrapper.startScrapper(ctx)
-	state.manager.peerManager.peerOperationReceiver <- startServer{
-		swarm: state.manager.peerManager,
-	}
+
 	state.manager.myState = &startedStated{manager: state.manager,cancelRoutines: cancelRoutine}
 
 	log.Printf("new state: %v", reflect.TypeOf(state.manager.myState))

@@ -98,8 +98,6 @@ func (peer *Peer) receive(context context.Context, msgChan chan BaseMsg) error {
 			//reads the length of the incoming msg
 			_, err = io.ReadFull(peer.connection, msgLenBuffer)
 
-
-
 			msgLen := int(binary.BigEndian.Uint32(msgLenBuffer[0:4]))
 
 			// reads the full payload
@@ -109,6 +107,8 @@ func (peer *Peer) receive(context context.Context, msgChan chan BaseMsg) error {
 				log.Fatal(err)
 			}
 			msg, parserMsgErr := ParseMsg(bytes.Join([][]byte{msgLenBuffer, incomingMsgBuffer}, []byte{}), peer)
+
+			log.Printf("received new msg from : %v, \n %v",peer.connection.RemoteAddr().String(), msg)
 
 			if parserMsgErr == nil {
 				msgChan <- msg

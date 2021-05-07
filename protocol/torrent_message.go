@@ -44,14 +44,15 @@ type Msg struct {
 type HandShake struct {
 	pstrlen       string
 	pstr          string
-	infoHash      string
+	infoHash      []byte
 	reservedBytes []byte
 	peerID        string
 }
 
-func newHandShakeMsg(infohash string, peerID string) []byte {
+func newHandShakeMsg(infohash []byte, peerID string) []byte {
 	msg := HandShake{
 		infoHash: infohash,
+		peerID: peerID,
 	}
 	return msg.marshal()
 }
@@ -61,9 +62,9 @@ func (h HandShake) marshal() []byte {
 		{byte(HandShakeMsgId)},
 		[]byte(BittorrentIdentifier),
 		make([]byte, 8),
-		[]byte(h.infoHash),
+		h.infoHash,
 		[]byte(h.peerID)},
-		[]byte(""))
+		[]byte{})
 }
 func (h HandShake) handleMsg(*TorrentManager) {
 }
@@ -76,10 +77,10 @@ func parseHandShake(data []byte) (*HandShake, error) {
 	handShakeMsg := new(HandShake)
 
 	handShakeMsg.pstrlen = string(data[0:1])
-	handShakeMsg.pstr = string(data[1:len(BittorrentIdentifier)])
-	handShakeMsg.reservedBytes = data[len(BittorrentIdentifier) : len(BittorrentIdentifier)+8]
-	handShakeMsg.reservedBytes = data[len(BittorrentIdentifier)+8 : len(BittorrentIdentifier)+28]
-	handShakeMsg.reservedBytes = data[len(BittorrentIdentifier)+28 : len(BittorrentIdentifier)+48]
+	handShakeMsg.pstr = string(data[1:20])
+	handShakeMsg.reservedBytes = data[20 : 28]
+	handShakeMsg.infoHash = data[28 : 48]
+	handShakeMsg.peerID = string(data[48:68])
 	return handShakeMsg, nil
 
 }
@@ -313,7 +314,7 @@ func newUdpAnnounceRequest(msg announceUdpMsg) []byte {
 		utils.IntToByte(msg.event, 4),
 		utils.IntToByte(msg.ip, 4),
 		utils.IntToByte(msg.key, 4),
-		utils.IntToByte(50, 4),
+		utils.IntToByte(msg.numWant, 4),
 		utils.IntToByte(msg.port, 2),
 		}, []byte{})
 }
@@ -337,7 +338,10 @@ func parseAnnounceResponseUdpMsg(msg []byte, msgSize int) announceResponseUdpMsg
 		interval:       int(binary.BigEndian.Uint32(msg[8:12])),
 		nLeechers:      int(binary.BigEndian.Uint32(msg[12:16])),
 		nSeeders:       int(binary.BigEndian.Uint32(msg[16:20])),
-		peersAddresses: msg[26:msgSize],
+	}
+
+	if msgSize >= 26{
+		announceResponse.peersAddresses = msg[26:msgSize]
 	}
 
 	print("msg size \n")
