@@ -5,8 +5,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"fmt"
 	"io"
+	"log"
 	"net"
 	"strconv"
 	"time"
@@ -47,7 +47,6 @@ func  NewPeer(ip, port, id string) *Peer {
 	return newPeer
 }
 func  NewPeerFromBytes(peerData []byte) *Peer {
-	newPeer := new(Peer)
 
 	ipByte := peerData[0:4]
 
@@ -69,8 +68,11 @@ func  NewPeerFromBytes(peerData []byte) *Peer {
 	}
 
 	portBytes := binary.BigEndian.Uint16(peerData[4:6])
+	port := strconv.FormatUint(uint64(portBytes), 10)
 
-	return NewPeer(ipString,strconv.FormatUint(uint64(portBytes), 10),ipString + ":" + newPeer.port)
+	log.Printf("peer addr: %v\n", ipString + ":" + port)
+
+	return NewPeer(ipString,strconv.FormatUint(uint64(portBytes), 10),ipString + ":" + port)
 }
 func NewPeerFromMap(peerData *parser.BMap) *Peer{
 	return NewPeer(peerData.Strings["ip"], peerData.Strings["port"],peerData.Strings["peer id"])
@@ -89,19 +91,23 @@ func (peer *Peer) receive(context context.Context, msgChan chan BaseMsg) error {
 
 	go peer.stopReceiving(context)
 
-	var readFromConnError error
+	var err error
 	msgLenBuffer := make([]byte, 4)
-	for readFromConnError == nil {
+	for  {
 
-			var nByteRead int
 			//reads the length of the incoming msg
-			nByteRead, readFromConnError = io.ReadFull(peer.connection, msgLenBuffer)
+			_, err = io.ReadFull(peer.connection, msgLenBuffer)
+
+
+
 			msgLen := int(binary.BigEndian.Uint32(msgLenBuffer[0:4]))
 
 			// reads the full payload
 			incomingMsgBuffer := make([]byte, msgLen)
-			nByteRead, readFromConnError = io.ReadFull(peer.connection, incomingMsgBuffer)
-			_ = nByteRead
+			_, err = io.ReadFull(peer.connection, incomingMsgBuffer)
+			if err != nil{
+				log.Fatal(err)
+			}
 			msg, parserMsgErr := ParseMsg(bytes.Join([][]byte{msgLenBuffer, incomingMsgBuffer}, []byte{}), peer)
 
 			if parserMsgErr == nil {
@@ -112,7 +118,5 @@ func (peer *Peer) receive(context context.Context, msgChan chan BaseMsg) error {
 
 	}
 
-	fmt.Printf("dropping peer ..\n")
-
-	return readFromConnError
+	return err
 }

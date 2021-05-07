@@ -4,6 +4,7 @@ import (
 	_ "DawnTorrent/parser"
 	"DawnTorrent/utils"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -34,6 +35,7 @@ func newPeerManager(msgReceiver chan BaseMsg,infoHash string) *peerManager {
 	peerManager := new(peerManager)
 	peerManager.msgReceiver = msgReceiver
 	peerManager.peerOperationReceiver = make(chan PeerOperation)
+	peerManager.activePeers = make(map[string]*Peer)
 	return peerManager
 }
 
@@ -66,7 +68,10 @@ func (peerSwarm *peerManager) handleNewPeer(connection *net.TCPConn) {
 
 	_, err = connection.Write(newHandShakeMsg(peerSwarm.InfoHashHex, ""))
 
-	if err == nil {
+	if err != nil{
+		return
+	}
+
 
 		newPeer := NewPeer(remotePeerAddr.IP.String(), strconv.Itoa(remotePeerAddr.Port), handShakeMsg.peerID)
 		newPeer.connection = connection
@@ -75,29 +80,38 @@ func (peerSwarm *peerManager) handleNewPeer(connection *net.TCPConn) {
 			peer:  newPeer,
 			swarm: peerSwarm,
 			msgReceiver: peerSwarm.msgReceiver,
-		}
 
 	}
 
 }
-func (peerSwarm *peerManager) connect(peer *Peer) {
+func (peerSwarm *peerManager) connect(peer *Peer) error {
 	var err error
-	remotePeerAddr, _ := net.ResolveTCPAddr("tcp", peer.ip+":"+peer.port)
+	remotePeerAddr, err := net.ResolveTCPAddr("tcp", peer.ip+":"+peer.port)
+	if err != nil {
+		log.Fatal(err)
+		return err
+	}
 	connection, err := net.DialTCP("tcp", nil, remotePeerAddr)
 	fmt.Printf("peer addr : %v, con %v\n", remotePeerAddr.String(), connection)
-	if err == nil {
+	if err != nil {
+		log.Print(err)
+		return err
+	}
 		_ = connection.SetKeepAlive(true)
 		_ = connection.SetKeepAlivePeriod(utils.KeepAliveDuration)
-		fmt.Printf("keep ALive %v", utils.KeepAliveDuration)
-		_, err := connection.Write(newHandShakeMsg(peerSwarm.InfoHashHex, ""))
+		fmt.Printf("keep ALive %v\n", utils.KeepAliveDuration)
+		_, err = connection.Write(newHandShakeMsg(peerSwarm.InfoHashHex, ""))
 
 		if err != nil {
 			log.Fatal(err)
 		}
 		handshakeBytes := make([]byte, 68)
 		_, err = io.ReadFull(connection, handshakeBytes)
+		
+		if err != nil{
+			return err
+		}
 
-		if err == nil {
 			handShakeMsg, handShakeMsgErr := parseHandShake(handshakeBytes)
 
 			if handShakeMsgErr != nil {
@@ -105,20 +119,19 @@ func (peerSwarm *peerManager) connect(peer *Peer) {
 			}
 
 			if handShakeMsg.infoHash != peerSwarm.InfoHashHex {
-				return
+				err := connection.Close()
+				if err != nil {
+					return err
+				}
+				return errors.New("wrong infohash")
 			}
 
 			peer.connection = connection
-			peerSwarm.peerOperationReceiver <- addPeerOperation{
-				peer:  peer,
-				swarm: peerSwarm,
-				msgReceiver: peerSwarm.msgReceiver,
-			}
-		}
-	} else {
-		//fmt.Printf("connection failed \n")
-	}
+		
+	return nil
 }
+
+
 func (peerSwarm *peerManager) DropConnection(peer *Peer) {
 	/*
 		peer.connection = nil
@@ -154,7 +167,6 @@ func (peerSwarm *peerManager) startServer(ctx context.Context) {
 	server, err := net.ListenTCP("tcp", utils.LocalAddr2)
 
 	if err != nil {
-
 		log.Fatalf("err: %v",err)
 	}
 
@@ -165,8 +177,9 @@ func (peerSwarm *peerManager) startServer(ctx context.Context) {
 			var connection *net.TCPConn
 			var connErr error
 			connection, connErr = server.AcceptTCP()
+			log.Printf("received new conn : %v\n",connection.RemoteAddr().String())
 			if connErr == nil {
-
+					print("hello")
 				peerSwarm.peerOperationReceiver <- IncomingPeerConnection{
 					swarm: peerSwarm,
 					conn:  connection,

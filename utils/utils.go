@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"crypto/sha1"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
@@ -19,7 +18,7 @@ import (
 )
 
 const DEBUG = true
-const PORT = 6881
+const PORT = 6885
 const PORT2 = 6881
 const UpFlag = "up"
 
@@ -31,7 +30,7 @@ const (
 	Ipc = 3
 )
 
-var LocalAddr, _ = net.ResolveTCPAddr("tcp", LocalAddress().String()+":"+strconv.Itoa(PORT2))
+var LocalAddr, _ = net.ResolveTCPAddr("tcp", LocalAddress().String()+":"+strconv.Itoa(PORT))
 var LocalAddr2, _ = net.ResolveTCPAddr("tcp", ":"+strconv.Itoa(PORT))
 var MyID = GetRandomId(20)
 
@@ -58,8 +57,7 @@ func GetRandomId(s int) string {
 		peerIDRandomArr = append(peerIDRandomArr, byte(n))
 	}
 
-	peerIDRandomSha := sha1.Sum(peerIDRandomArr)
-	peerId = hex.EncodeToString(peerIDRandomSha[:])
+	peerId = hex.EncodeToString(peerIDRandomArr)
 	return peerId
 }
 
@@ -108,9 +106,9 @@ func LocalAddress() net.IP {
 	return net.IP{}
 }
 
-// Mask a bit at given position
-//
-// 1 turns bit on | 0 turns bit off
+
+// 	BitMask maks a bit at given position
+//	1 turns bit on | 0 turns bit off
 func BitMask(b uint8, bits []int, action int) uint8 {
 
 	if action == 1 {

@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"context"
+	"log"
 	"net"
 )
 
@@ -22,9 +23,15 @@ func(operation addPeerOperation) execute(ctx context.Context) {
 	// for now, we set no limit on the max connections allowed
 	operation.swarm.activePeers[operation.peer.id] = operation.peer
 	go func() {
+		if operation.peer.connection == nil{
+			err := operation.swarm.connect(operation.peer)
+			if err != nil {
+				return
+			}
+		}
 		err := operation.peer.receive(ctx, operation.msgReceiver)
 		if err != nil {
-
+			log.Printf("something bad happen while peer was connected\n err: %v",err)
 		}
 	}()
 }

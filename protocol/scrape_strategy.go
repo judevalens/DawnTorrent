@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-const udpTryOutDeadline = time.Second * 60
+const udpTryOutDeadline = time.Second * 15
 const maxPacketSize = 65535
 
 type scrapeStrategy interface {
@@ -46,13 +46,14 @@ func (trp *httpTracker2) execRequest() (*parser.BMap, error) {
 	trackerRequestParam.Add("left", strconv.Itoa(left))
 	trackerRequestParam.Add("event", event)
 
-	trackerUrl := trp.trackerURL
+	trackerUrl := trp.mainTrackerUrl
 	trackerUrl.RawQuery = trackerRequestParam.Encode()
 
 	fmt.Printf("\n Param \n %v \n", trackerUrl)
 
 	trackerResponseByte, _ := http.Get(trackerUrl.String())
 	trackerResponse, _ := ioutil.ReadAll(trackerResponseByte.Body)
+
 
 	fmt.Printf("%v\n", string(trackerResponse))
 
@@ -108,59 +109,81 @@ func (trp *udpTracker2) handleRequest() (int, error) {
 
 	if err != nil{
 		//TODO must be fixed
-		log.Fatal(err)
+		log.Print(err)
+		return 0, err
 	}
 
 	announceResponse,err := trp.sendAnnounceRequest(time.Now().Add(udpTryOutDeadline),conn,connectionResponse)
 
 	if err != nil {
-		return 0, nil
+		log.Print(err)
+		return 0, err
 	}
 
 	peers = trp.createPeersFromUDPTracker(announceResponse.peersAddresses)
 
 	for _, peer := range peers {
-		operation := addPeerOperation{
+
+		trp.Scrapper.peerManager.peerOperationReceiver <- addPeerOperation{
 			peer:  peer,
 			swarm: trp.Scrapper.peerManager,
 		}
-		trp.Scrapper.peerManager.peerOperationReceiver <- operation
 	}
 
-	return 0, nil
+	log.Printf("announce response : interval %v, nSeeders %v, nLeechers %v", announceResponse.interval, announceResponse.nSeeders, announceResponse.nLeechers)
+
+	return announceResponse.interval, nil
 }
 
 func (trp *udpTracker2) sendConnectRequest(deadline time.Time) (baseUdpMsg, *net.UDPConn, error) {
 	var err error
 	var conn *net.UDPConn
-	for time.Now().UnixNano() > deadline.UnixNano() {
-		randSeed := rand.New(rand.NewSource(time.Now().UnixNano()))
-		connectionRequest := newUdpConnectionRequest(int(randSeed.Int31()))
+	var trackerAddress *net.UDPAddr
 
-		cleanedUdpAddr := trp.trackerURL
-		trackerAddress, _ := net.ResolveUDPAddr("udp", cleanedUdpAddr.String())
+	trackerAddress, err = net.ResolveUDPAddr("udp", trp.mainTrackerUrl.Hostname()+":"+trp.mainTrackerUrl.Port())
+	if err != nil{
+		log.Fatal(err)
+	}
+	conn, err = net.DialUDP("udp", nil, trackerAddress)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("local addr: %v,",conn.LocalAddr().String())
+	randSeed := rand.New(rand.NewSource(time.Now().UnixNano()))
+	transactionId := int(randSeed.Int31())
+	connectionRequest := newUdpConnectionRequest(transactionId)
+	log.Printf("connectionRequest : %v",connectionRequest)
+	for time.Now().UnixNano() < deadline.UnixNano() {
 
-		conn, err = net.DialUDP("udp", nil, trackerAddress)
+		log.Printf("sending udp connection request to udp tracker......")
+		nByteSent, err := conn.Write(connectionRequest)
+		log.Printf("n byte sent : %v",nByteSent)
+
 		if err != nil {
 			log.Fatal(err)
 		}
-		_, err = conn.Write(connectionRequest)
-
-		if err != nil {
-			log.Fatal(err)
-		}
-		incomingMsg := make([]byte, 5000)
+		incomingMsg := make([]byte, maxPacketSize)
 		_ = conn.SetReadDeadline(time.Now().Add(time.Second * 15))
-		_, err = bufio.NewReader(conn).Read(incomingMsg)
+		nByteRead, err := bufio.NewReader(conn).Read(incomingMsg)
+		log.Printf("n byte read : %v",nByteRead)
+
 		if err != nil {
 
 			if errors.Is(err, os.ErrDeadlineExceeded) {
+				log.Print(err)
 				continue
 			}
 			log.Fatal(err)
 		}
 
-		return parseUdpConnectionResponse(incomingMsg), conn, nil
+
+		response := parseUdpConnectionResponse(incomingMsg)
+
+		log.Printf("action %v, connectionID %v, transction %v old transation %v",response.action,response.connectionID,response.transactionID,transactionId)
+
+		//log.Printf("udp conn res:\n%v",string(incomingMsg))
+
+		return response, conn, nil
 	}
 	return baseUdpMsg{}, nil, os.ErrDeadlineExceeded
 }
@@ -168,28 +191,40 @@ func (trp *udpTracker2) sendAnnounceRequest(deadline time.Time, conn *net.UDPCon
 	var err error
 	randSeed := rand.New(rand.NewSource(time.Now().UnixNano()))
 
-	for time.Now().UnixNano() > deadline.UnixNano() {
-		downloaded, uploaded, left := trp.getTransferStats()
+	for time.Now().UnixNano() < deadline.UnixNano() {
+		_, _, left := trp.getTransferStats()
+		left = 0
+		transactionId := int(randSeed.Int31())
 		announceRequest := newUdpAnnounceRequest(announceUdpMsg{
-			baseUdpMsg: connectionResponse,
+			baseUdpMsg: baseUdpMsg{
+				action:        udpAnnounceRequest,
+				connectionID:  connectionResponse.connectionID,
+				transactionID: transactionId,
+			},
 			infohash:   trp.infoHash,
 			peerId:     utils.MyID,
-			downloaded: downloaded,
-			uploaded:   uploaded,
+			downloaded: 67,
+			uploaded:   20,
 			left:       left,
-			event:      trp.getCurrentStateInt(),
-			key:        int(randSeed.Int31()),
-			numWant: 	-1 , //default
+			ip: 0,
+			event:      0,
+			key:        2,
+			numWant: 	50 , //default
 			port: utils.LocalAddr.Port,
 		})
 
+		log.Printf("raw announce request\n%v", announceRequest)
+		log.Printf("torrent state %v", trp.getCurrentStateInt())
+		log.Printf("my id %v", len(utils.MyID))
+
 		_, err = conn.Write(announceRequest)
 		if err != nil {
+			log.Fatal(err)
 			return announceResponseUdpMsg{}, err
 		}
 
-		incomingMsg := make([]byte, maxPacketSize)
-		_ = conn.SetReadDeadline(time.Now().Add(time.Second * 15))
+		incomingMsg := make([]byte, 1024)
+		_ = conn.SetReadDeadline(time.Now().Add(time.Second * 20))
 		nByteRead, err := bufio.NewReader(conn).Read(incomingMsg)
 		if err != nil {
 
@@ -199,7 +234,11 @@ func (trp *udpTracker2) sendAnnounceRequest(deadline time.Time, conn *net.UDPCon
 			log.Fatal(err)
 		}
 
-		return parseAnnounceResponseUdpMsg(incomingMsg,nByteRead), nil
+		announceResponse := parseAnnounceResponseUdpMsg(incomingMsg,nByteRead)
+
+		log.Printf("action %v, connectionID %v, transction %v old transation %v",announceResponse.action,connectionResponse.connectionID,announceResponse.transactionID,transactionId)
+
+		return announceResponse, nil
 	}
 	return announceResponseUdpMsg{}, os.ErrDeadlineExceeded
 }
@@ -207,6 +246,7 @@ func (trp *udpTracker2) sendAnnounceRequest(deadline time.Time, conn *net.UDPCon
 func (trp *udpTracker2) createPeersFromUDPTracker(peersAddress []byte) []*Peer {
 	var peers []*Peer
 	i := 0
+	log.Printf("peersAddress len %v",len(peersAddress))
 	for i < len(peersAddress) {
 		peer := NewPeerFromBytes(peersAddress[i:(i + 6)])
 		peers = append(peers, peer)
@@ -217,22 +257,3 @@ func (trp *udpTracker2) createPeersFromUDPTracker(peersAddress []byte) []*Peer {
 	return peers
 }
 
-type UdpMSG struct {
-	action         int
-	connectionID   int
-	transactionID  int
-	infoHash       []byte
-	peerID         []byte
-	downloaded     int
-	left           int
-	uploaded       int
-	event          int
-	ip             []byte
-	key            int
-	numWant        int
-	port           int
-	Interval       int
-	leechers       int
-	seeders        int
-	PeersAddresses []byte
-}

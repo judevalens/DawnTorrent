@@ -30,7 +30,7 @@ func main() {
 	//c.addTorrent("/home/jude/GolandProjects/DawnTorrent/files/ubuntu-20.04-desktop-amd64.iso.torrent",PeerProtocol.InitTorrentFile_)
 	//c.torrents["1"].Start()
 
-	torrentPath := "files/big-buck-bunny.torrent"
+	torrentPath := "files/cosmos-laundromat.torrent"
 	 manager1 := protocol.NewTorrentManager(torrentPath)
 	go manager1.Init()
 	 manager1.SetState(protocol.StartTorrent)

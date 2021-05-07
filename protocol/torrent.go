@@ -32,6 +32,7 @@ type Torrent struct {
 	nSubPiece          int
 	infoHashByte       [20]byte
 	InfoHashHex        string
+	InfoHash		string
 	pieceLength        int
 	Name               string
 	PieceHolder        []*byte
@@ -62,12 +63,15 @@ func createNewTorrent(torrentPath string) (*Torrent,error) {
 
 	torrentFile.infoHashByte = infoHashByte
 	torrentFile.InfoHashHex = hexInfoHash
+	torrentFile.InfoHash = string(torrentFile.infoHashByte[:])
 	torrentFile.AnnouncerUrl = torrentMap.Strings["announce"]
 	torrentFile.AnnounceList = make([]string,len(torrentMap.BLists["announce-list"].BLists))
 
 	for i,announcerUrl := range torrentMap.BLists["announce-list"].BLists{
 		fmt.Printf("url : %v\n", announcerUrl.Strings)
-		torrentFile.AnnounceList[i] = announcerUrl.Strings[0]
+		if len(announcerUrl.Strings) > 0 {
+			torrentFile.AnnounceList[i] = announcerUrl.Strings[0]
+		}
 	}
 
 	torrentFile.CreationDate = torrentMap.Strings["creation date"]
