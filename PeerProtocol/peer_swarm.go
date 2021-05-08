@@ -408,7 +408,7 @@ func (peerSwarm *PeerSwarm) udpTrackerRequest(event int) (UdpMSG, error) {
 
 func (peerSwarm *PeerSwarm) tracker() {
 
-	//determines which protocol the tracker uses
+	//determines which app the tracker uses
 	var peersFromTracker *parser.BMap
 	var trackerErr error
 

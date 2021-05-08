@@ -1,6 +1,7 @@
-package protocol
+package app
 
 import (
+	"DawnTorrent/protocol"
 	"bytes"
 	"encoding/binary"
 	"errors"
@@ -226,7 +227,7 @@ func parsePieceMsg(data []byte, baseMSg Msg) (PieceMsg, error) {
 	return PieceMsg{}, nil
 }
 
-func ParseMsg(msg []byte, peer *Peer) (BaseMsg, error) {
+func ParseMsg(msg []byte, peer protocol.PeerI) (BaseMsg, error) {
 	baseMsg := Msg{}
 	if len(msg) < 5 {
 		return nil, errors.New("msg is too short")

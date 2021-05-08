@@ -1,6 +1,7 @@
-package protocol
+package tracker
 
 import (
+	"DawnTorrent/protocol"
 	"context"
 	"errors"
 	"fmt"
@@ -17,35 +18,37 @@ const (
 	udpScheme  = "udp"
 )
 
-type Scrapper struct {
+type Announcer struct {
 	state          trackerRequestState
 	infoHash       string
 	mainTrackerUrl *url.URL
 	trackerUrls    []*url.URL
 	interval       time.Duration
 	timer          *time.Timer
-	manager        *TorrentManager
+	torrentManager protocol.TorrentManagerI
+	peerManager    protocol.PeerManagerI
 	strategy       scrapeStrategy
 }
 
-func newTracker(announcerUrlString, infoHash string, manager *TorrentManager) (*Scrapper, error) {
-	var baseTracker *Scrapper
+func NewAnnouncer(announcerUrlString, infoHash string, manager protocol.TorrentManagerI,peerManager protocol.PeerManagerI) (*Announcer, error) {
+	var baseTracker *Announcer
 	trackerURL, err := url.Parse("udp://tracker.opentrackr.org:1337")
 
 	if err != nil {
 		return nil, err
 	}
 	fmt.Printf("info hash : %v\n", infoHash)
-	baseTracker = &Scrapper{
+	baseTracker = &Announcer{
 		infoHash:       infoHash,
 		mainTrackerUrl: trackerURL,
 		timer:          time.NewTimer(time.Nanosecond),
-		manager:        manager,
+		torrentManager: manager,
+		peerManager: peerManager,
 		state:          &initialRequest{baseTracker},
 	}
 
 
-	for _, s := range manager.torrent.AnnounceList {
+	for _, s := range manager.GetAnnounceList() {
 		newUrl, err := url.Parse(s)
 
 		if err != nil{
@@ -60,12 +63,12 @@ func newTracker(announcerUrlString, infoHash string, manager *TorrentManager) (*
 	log.Printf("url: %v, url scheme : %v", announcerUrlString, trackerURL.Scheme)
 
 
-	log.Printf("creating new Scrapper: %v", reflect.TypeOf(baseTracker))
+	log.Printf("creating new Announcer: %v", reflect.TypeOf(baseTracker))
 
 	return baseTracker, nil
 }
 
-func (t *Scrapper) setTrackerStrategy(url *url.URL){
+func (t *Announcer) setTrackerStrategy(url *url.URL){
 	t.state.cancel()
 	if url.Scheme == "https" || url.Scheme == "http" {
 		t.strategy = &httpTracker2{
@@ -78,13 +81,13 @@ func (t *Scrapper) setTrackerStrategy(url *url.URL){
 	}
 }
 
-func (t *Scrapper) getCurrentState() string {
-	switch t.manager.getState() {
-	case StartTorrent:
+func (t *Announcer) getCurrentState() string {
+	switch t.torrentManager.GetState() {
+	case protocol.StartTorrent:
 		return "started"
-	case StopTorrent:
+	case protocol.StopTorrent:
 		return "stopped"
-	case CompleteTorrent:
+	case protocol.CompleteTorrent:
 		return "completed"
 	default:
 		return ""
@@ -92,25 +95,25 @@ func (t *Scrapper) getCurrentState() string {
 	}
 }
 
-func (t *Scrapper) getCurrentStateInt() int  {
-	return t.manager.getState()
+func (t *Announcer) getCurrentStateInt() int  {
+	return t.torrentManager.GetState()
 }
 
 
-func (t *Scrapper) getTransferStats() (int, int, int) {
-	return t.manager.totalDownloaded, t.manager.uploaded, t.manager.left
+func (t *Announcer) getTransferStats() (int, int, int) {
+	return t.torrentManager.GetStats()
 }
 
-func (t *Scrapper) startScrapper(ctx context.Context) {
+func (t *Announcer) StartScrapper(ctx context.Context) {
 
 	t.state = &initialRequest{scrapper: t}
 	t.state.handle()
 }
 
-func (t *Scrapper) stopTracker() {
+func (t *Announcer) stopTracker() {
 	t.state.cancel()
 }
-func (t *Scrapper) resetTracker(duration time.Duration) {
+func (t *Announcer) resetTracker(duration time.Duration) {
 	t.state.reset(duration)
 }
 
@@ -121,14 +124,14 @@ type trackerRequestState interface {
 }
 
 type initialRequest struct {
-	scrapper *Scrapper
+	scrapper *Announcer
 }
 
 func (i *initialRequest) handle() {
 	var err error
 	var interval int
 	log.Printf("trackerUrl: %v", i.scrapper.mainTrackerUrl.String())
-	log.Printf("sending initial 2 Scrapper request, trackerType : %v", reflect.TypeOf(i.scrapper))
+	log.Printf("sending initial 2 Announcer request, trackerType : %v", reflect.TypeOf(i.scrapper))
 	interval, err = i.scrapper.strategy.handleRequest()
 
 
@@ -146,7 +149,7 @@ func (i *initialRequest) handle() {
 
 	i.scrapper.interval, _ = time.ParseDuration(strconv.Itoa(interval)+"s")
 	i.scrapper.state = &recurringRequest{scrapper: i.scrapper}
-	log.Print("launching Scrapper request")
+	log.Print("launching Announcer request")
 	i.scrapper.state.handle()
 
 }
@@ -155,7 +158,7 @@ func (i *initialRequest) handle() {
 /*
 	iterates through a torrent tracker url list to find a responsive server
  */
-func loopThroughList(scrapper *Scrapper)(int,error){
+func loopThroughList(scrapper *Announcer)(int,error){
 	var err error
 	var interval int
 	for _, trackerUrl := range scrapper.trackerUrls {
@@ -174,20 +177,19 @@ func loopThroughList(scrapper *Scrapper)(int,error){
 }
 
 func (i *initialRequest) cancel() {
-
 }
 
 func (i *initialRequest) reset(time.Duration) {
 }
 
 type recurringRequest struct {
-	scrapper *Scrapper
+	scrapper *Announcer
 }
 
 func (r *recurringRequest) handle() {
 	log.Printf("next tracker request will fire in %v", r.scrapper.interval)
 	r.scrapper.timer = time.AfterFunc(r.scrapper.interval, func() {
-		log.Printf("sending initial Scrapper request, trackerType : %v", reflect.TypeOf(r.scrapper))
+		log.Printf("sending initial Announcer request, trackerType : %v", reflect.TypeOf(r.scrapper))
 
 		interval, err := r.scrapper.strategy.handleRequest()
 		if err != nil {

@@ -1,7 +1,8 @@
-package protocol
+package tracker
 
 import (
 	"DawnTorrent/parser"
+	"DawnTorrent/protocol"
 	"DawnTorrent/utils"
 	"bufio"
 	"errors"
@@ -25,7 +26,7 @@ type scrapeStrategy interface {
 }
 
 type httpTracker2 struct {
-	*Scrapper
+	*Announcer
 }
 
 func (trp *httpTracker2) execRequest() (*parser.BMap, error) {
@@ -70,40 +71,26 @@ func (trp *httpTracker2) execRequest() (*parser.BMap, error) {
 
 func (trp *httpTracker2) handleRequest() (int, error) {
 	print("hello from http handle request")
-	var peers []*Peer
+	var peers []protocol.PeerI
 	trackerResponse, err := trp.execRequest()
 	if err != nil {
 		return 0, nil
 	}
 
-	peers = trp.createPeersFromHTTPTracker(trackerResponse.BLists["peers"].BMaps)
+	peers = trp.peerManager.CreatePeersFromHTTPTracker(trackerResponse.BLists["peers"].BMaps)
 
-	for _, peer := range peers {
-		operation := addPeerOperation{
-			peer:  peer,
-			swarm: trp.Scrapper.manager.peerManager,
-		}
-		trp.Scrapper.manager.peerManager.peerOperationReceiver <- operation
-	}
+	trp.peerManager.AddNewPeer(peers)
 
 	return 0, nil
 }
-func (trp *httpTracker2) createPeersFromHTTPTracker(peersInfo []*parser.BMap) []*Peer {
-	var peers []*Peer
-	for _, peerDict := range peersInfo {
-		peer := NewPeer(peerDict.Strings["ip"], peerDict.Strings["port"], peerDict.Strings["peer id"])
-		peers = append(peers, peer)
-		//go peerSwarm.connect(peer)
-	}
-	return peers
-}
+
 
 type udpTracker2 struct {
-	*Scrapper
+	*Announcer
 }
 
 func (trp *udpTracker2) handleRequest() (int, error) {
-	var peers []*Peer
+	var peers []protocol.PeerI
 	var err error
 	connectionResponse, conn, err := trp.sendConnectRequest(time.Now().Add(udpTryOutDeadline))
 
@@ -120,23 +107,26 @@ func (trp *udpTracker2) handleRequest() (int, error) {
 		return 0, err
 	}
 
-	peers = trp.createPeersFromUDPTracker(announceResponse.peersAddresses)
+	peers = trp.peerManager.CreatePeersFromUDPTracker(announceResponse.PeersAddresses)
+	trp.Announcer.peerManager.AddNewPeer(peers)
 
+
+	//TODO need to move that in peer manager
+	/*
 	for _, peer := range peers {
-
-		trp.Scrapper.manager.peerManager.peerOperationReceiver <- addPeerOperation{
-			peer:  peer,
-			swarm: trp.Scrapper.manager.peerManager,
-			msgReceiver: trp.Scrapper.manager.msgChan,
+		trp.Announcer.torrentManager.PeerManager.PeerOperationReceiver <- AddPeerOperation{
+			Peer:        peer,
+			PeerManager: trp.Announcer.torrentManager.PeerManager,
+			MsgReceiver: trp.Announcer.torrentManager.MsgChan,
 		}
-	}
+	}*/
 
-	log.Printf("announce response : interval %v, nSeeders %v, nLeechers %v", announceResponse.interval, announceResponse.nSeeders, announceResponse.nLeechers)
+	log.Printf("announce response : interval %v, nSeeders %v, nLeechers %v", announceResponse.Interval, announceResponse.NSeeders, announceResponse.NLeechers)
 
-	return announceResponse.interval, nil
+	return announceResponse.Interval, nil
 }
 
-func (trp *udpTracker2) sendConnectRequest(deadline time.Time) (baseUdpMsg, *net.UDPConn, error) {
+func (trp *udpTracker2) sendConnectRequest(deadline time.Time) (BaseUdpMsg, *net.UDPConn, error) {
 	var err error
 	var conn *net.UDPConn
 	var trackerAddress *net.UDPAddr
@@ -152,7 +142,7 @@ func (trp *udpTracker2) sendConnectRequest(deadline time.Time) (baseUdpMsg, *net
 	log.Printf("local addr: %v,",conn.LocalAddr().String())
 	randSeed := rand.New(rand.NewSource(time.Now().UnixNano()))
 	transactionId := int(randSeed.Int31())
-	connectionRequest := newUdpConnectionRequest(transactionId)
+	connectionRequest := NewUdpConnectionRequest(transactionId)
 	log.Printf("connectionRequest : %v",connectionRequest)
 	for time.Now().UnixNano() < deadline.UnixNano() {
 
@@ -178,17 +168,17 @@ func (trp *udpTracker2) sendConnectRequest(deadline time.Time) (baseUdpMsg, *net
 		}
 
 
-		response := parseUdpConnectionResponse(incomingMsg)
+		response := ParseUdpConnectionResponse(incomingMsg)
 
-		log.Printf("action %v, connectionID %v, transction %v old transation %v",response.action,response.connectionID,response.transactionID,transactionId)
+		log.Printf("action %v, connectionID %v, transction %v old transation %v",response.Action,response.ConnectionID,response.TransactionID,transactionId)
 
 		//log.Printf("udp conn res:\n%v",string(incomingMsg))
 
 		return response, conn, nil
 	}
-	return baseUdpMsg{}, nil, os.ErrDeadlineExceeded
+	return BaseUdpMsg{}, nil, os.ErrDeadlineExceeded
 }
-func (trp *udpTracker2) sendAnnounceRequest(deadline time.Time, conn *net.UDPConn,connectionResponse baseUdpMsg) (announceResponseUdpMsg, error) {
+func (trp *udpTracker2) sendAnnounceRequest(deadline time.Time, conn *net.UDPConn,connectionResponse BaseUdpMsg) (AnnounceResponseUdpMsg, error) {
 	var err error
 	randSeed := rand.New(rand.NewSource(time.Now().UnixNano()))
 
@@ -196,22 +186,22 @@ func (trp *udpTracker2) sendAnnounceRequest(deadline time.Time, conn *net.UDPCon
 		_, _, left := trp.getTransferStats()
 		left = 0
 		transactionId := int(randSeed.Int31())
-		announceRequest := newUdpAnnounceRequest(announceUdpMsg{
-			baseUdpMsg: baseUdpMsg{
-				action:        udpAnnounceRequest,
-				connectionID:  connectionResponse.connectionID,
-				transactionID: transactionId,
+		announceRequest := NewUdpAnnounceRequest(AnnounceUdpMsg{
+			BaseUdpMsg: BaseUdpMsg{
+				Action:        UdpAnnounceRequest,
+				ConnectionID:  connectionResponse.ConnectionID,
+				TransactionID: transactionId,
 			},
-			infohash:   trp.infoHash,
-			peerId:     utils.MyID,
-			downloaded: 67,
-			uploaded:   20,
-			left:       left,
-			ip: 0,
-			event:      0,
-			key:        2,
-			numWant: 	-1 , //default
-			port: utils.LocalAddr.Port,
+			Infohash:   trp.infoHash,
+			PeerId:     utils.MyID,
+			Downloaded: 67,
+			Uploaded:   20,
+			Left:       left,
+			Ip:         0,
+			Event:      0,
+			Key:        2,
+			NumWant:    -1 , //default
+			Port:       utils.LocalAddr.Port,
 		})
 
 		log.Printf("raw announce request\n%v", announceRequest)
@@ -221,7 +211,7 @@ func (trp *udpTracker2) sendAnnounceRequest(deadline time.Time, conn *net.UDPCon
 		_, err = conn.Write(announceRequest)
 		if err != nil {
 			log.Fatal(err)
-			return announceResponseUdpMsg{}, err
+			return AnnounceResponseUdpMsg{}, err
 		}
 
 		incomingMsg := make([]byte, 1024)
@@ -235,26 +225,12 @@ func (trp *udpTracker2) sendAnnounceRequest(deadline time.Time, conn *net.UDPCon
 			log.Fatal(err)
 		}
 
-		announceResponse := parseAnnounceResponseUdpMsg(incomingMsg,nByteRead)
+		announceResponse := ParseAnnounceResponseUdpMsg(incomingMsg,nByteRead)
 
-		log.Printf("action %v, connectionID %v, transction %v old transation %v",announceResponse.action,connectionResponse.connectionID,announceResponse.transactionID,transactionId)
+		log.Printf("action %v, connectionID %v, transction %v old transation %v",announceResponse.Action,connectionResponse.ConnectionID,announceResponse.TransactionID,transactionId)
 
 		return announceResponse, nil
 	}
-	return announceResponseUdpMsg{}, os.ErrDeadlineExceeded
-}
-
-func (trp *udpTracker2) createPeersFromUDPTracker(peersAddress []byte) []*Peer {
-	var peers []*Peer
-	i := 0
-	log.Printf("peersAddress len %v",len(peersAddress))
-	for i < len(peersAddress) {
-		peer := NewPeerFromBytes(peersAddress[i:(i + 6)])
-		peers = append(peers, peer)
-		///go peerSwarm.connect(peer)
-		i += 6
-	}
-
-	return peers
+	return AnnounceResponseUdpMsg{}, os.ErrDeadlineExceeded
 }
 

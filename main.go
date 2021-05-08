@@ -1,6 +1,7 @@
 package main
 
 import (
+	"DawnTorrent/app"
 	"DawnTorrent/protocol"
 	"bufio"
 	"fmt"
@@ -31,7 +32,7 @@ func main() {
 	//c.torrents["1"].Start()
 
 	torrentPath := "files/cosmos-laundromat.torrent"
-	 manager1 := protocol.NewTorrentManager(torrentPath)
+	 manager1 := app.NewTorrentManager(torrentPath)
 	go manager1.Init()
 	 manager1.SetState(protocol.StartTorrent)
 	println("non blocking")

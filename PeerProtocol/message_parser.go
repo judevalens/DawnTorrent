@@ -48,7 +48,7 @@ var (
 	pieceLen               int = 9
 	portMsgLen                 = []byte{0, 0, 0, 3}
 	HandShakePrefixLength      = []byte{19}
-	ProtocolIdentifier         = []byte("BitTorrent protocol")
+	ProtocolIdentifier         = []byte("BitTorrent app")
 	BitTorrentReservedByte     = []byte{0, 0, 0, 0, 0, 0, 0, 0}
 	MaxMsgSize                 = 2000
 	maxPiece               byte
@@ -307,7 +307,7 @@ func ParseHandShake(msg []byte, infoHash string) (HandShakeMsg, error) {
 			}
 
 		} else {
-			err = errors.New("handshake \n bad protocol identifier")
+			err = errors.New("handshake \n bad app identifier")
 
 			//fmt.Printf("%v\n", err)
 		}

@@ -1,4 +1,4 @@
-package protocol
+package app
 
 import (
 	"DawnTorrent/parser"
@@ -34,6 +34,25 @@ type Peer struct {
 	isFree                          bool
 }
 
+func (peer *Peer) SetConnection(conn *net.TCPConn) {
+	peer.connection = conn
+}
+
+func (peer *Peer) GetId() string {
+	return peer.id
+}
+
+func (peer *Peer) GetAddress() *net.TCPAddr {
+	addr, err := net.ResolveTCPAddr("tcp", peer.ip+":"+peer.port)
+	if err != nil {
+		return nil
+	}
+	return addr
+}
+
+func (peer *Peer) GetConnection() *net.TCPConn {
+	return peer.connection
+}
 
 func  NewPeer(ip, port, id string) *Peer {
 	newPeer := new(Peer)
@@ -116,8 +135,7 @@ func (peer *Peer) receive(context context.Context, msgChan chan BaseMsg) error {
 		}
 
 		msgChan <- msg
-
-
+		
 
 	}
 
