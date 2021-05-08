@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"os"
 	"strconv"
 	"time"
 )
@@ -106,14 +107,16 @@ func (peer *Peer) receive(context context.Context, msgChan chan BaseMsg) error {
 			if err != nil{
 				log.Fatal(err)
 			}
-			msg, parserMsgErr := ParseMsg(bytes.Join([][]byte{msgLenBuffer, incomingMsgBuffer}, []byte{}), peer)
+			msg, err := ParseMsg(bytes.Join([][]byte{msgLenBuffer, incomingMsgBuffer}, []byte{}), peer)
 
 			log.Printf("received new msg from : %v, \n %v",peer.connection.RemoteAddr().String(), msg)
 
-			if parserMsgErr == nil {
-				msgChan <- msg
-
+			if err != nil {
+			os.Exit(23)
 		}
+
+		msgChan <- msg
+
 
 
 	}

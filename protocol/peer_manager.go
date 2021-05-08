@@ -77,6 +77,8 @@ func (peerSwarm *peerManager) handleNewPeer(connection *net.TCPConn) {
 	newPeer := NewPeer(remotePeerAddr.IP.String(), strconv.Itoa(remotePeerAddr.Port), handShakeMsg.peerID)
 	newPeer.connection = connection
 
+	log.Printf("incoming connection was succesful")
+
 	peerSwarm.peerOperationReceiver <- addPeerOperation{
 		peer:        newPeer,
 		swarm:       peerSwarm,

@@ -127,6 +127,7 @@ func (trp *udpTracker2) handleRequest() (int, error) {
 		trp.Scrapper.manager.peerManager.peerOperationReceiver <- addPeerOperation{
 			peer:  peer,
 			swarm: trp.Scrapper.manager.peerManager,
+			msgReceiver: trp.Scrapper.manager.msgChan,
 		}
 	}
 

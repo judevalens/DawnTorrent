@@ -60,7 +60,10 @@ type connectPeerOperation struct {
 }
 
 func (operation connectPeerOperation) execute(context.Context) {
-	operation.swarm.connect(operation.peer)
+	err := operation.swarm.connect(operation.peer)
+	if err != nil {
+		return
+	}
 }
 
 type startServer struct {
