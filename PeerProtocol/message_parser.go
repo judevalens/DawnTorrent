@@ -231,13 +231,13 @@ func ParseMsg(msg []byte, peer *Peer) (BaseMSG, error) {
 	}else{
 		return nil, errors.New("msg is too short")
 	}
-	//fmt.Printf("Length %v %v ID %v \n", msgStruct.Length, binary.BigEndian.Uint32(msg[0:4]), msgStruct.ID)
+	//fmt.Printf("BlockLength %v %v ID %v \n", msgStruct.BlockLength, binary.BigEndian.Uint32(msg[0:4]), msgStruct.ID)
 
 	/*
-	if msgStruct.Length <= len(msg) {
+	if msgStruct.BlockLength <= len(msg) {
 		switch msgStruct.ID {
 		case BitfieldMsg:
-			msgStruct.PieceLen = int(math.Abs(float64(msgStruct.Length - BitFieldMsgLen)))
+			msgStruct.PieceLen = int(math.Abs(float64(msgStruct.BlockLength - BitFieldMsgLen)))
 			bitFieldMsg := BitFieldMSG{}
 			bitFieldMsg.MSG = *msgStruct
 			return bitFieldMsg, err
@@ -253,9 +253,9 @@ func ParseMsg(msg []byte, peer *Peer) (BaseMSG, error) {
 		case PieceMsg:
 			msgStruct.PieceIndex = int(binary.BigEndian.Uint32(msg[5:9]))
 			msgStruct.BeginIndex = int(binary.BigEndian.Uint32(msg[9:13]))
-			msgStruct.PieceLen = int(math.Abs(float64(msgStruct.Length - pieceLen)))
+			msgStruct.PieceLen = int(math.Abs(float64(msgStruct.BlockLength - pieceLen)))
 			msgStruct.Piece = make([]byte, msgStruct.PieceLen)
-			//fmt.Printf("raw msg len %v, piece len %v msg len %v\n nine in uint32 %v\n", msg[0:4], msgStruct.PieceLen, msgStruct.Length, pieceLen)
+			//fmt.Printf("raw msg len %v, piece len %v msg len %v\n nine in uint32 %v\n", msg[0:4], msgStruct.PieceLen, msgStruct.BlockLength, pieceLen)
 			end := msgStruct.PieceLen + 13
 
 

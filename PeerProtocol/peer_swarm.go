@@ -722,8 +722,8 @@ func (peer *Peer) receive(connection *net.TCPConn, msgChan chan BaseMSG) error {
 			//peerSwarm.DawnTorrent.requestQueue.addJob(parsedMsg)
 			if parsedMsg.ID == PieceMsg {
 				//peerSwarm.DawnTorrent.pieceQueue.Add(parsedMsg)
-				if nByteRead != parsedMsg.Length && nByteRead > 13 {
-					fmt.Printf("nByteRead bBytesRead %v, msgLen %v", nByteRead, parsedMsg.Length)
+				if nByteRead != parsedMsg.BlockLength && nByteRead > 13 {
+					fmt.Printf("nByteRead bBytesRead %v, msgLen %v", nByteRead, parsedMsg.BlockLength)
 					//os.Exit(25)
 				}
 				peerSwarm.torrent.msgRouter(parsedMsg)

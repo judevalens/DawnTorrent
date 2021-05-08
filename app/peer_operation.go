@@ -26,7 +26,7 @@ type IncomingPeerConnection struct {
 }
 
 func (operation IncomingPeerConnection) execute(context.Context) {
-	operation.swarm.handleNewPeer(operation.conn)
+	operation.swarm.handleConnectionRequest(operation.conn)
 }
 
 type connectPeerOperation struct {

@@ -35,8 +35,6 @@ type Torrent struct {
 	InfoHash		string
 	pieceLength        int
 	Name               string
-	PieceHolder        []*byte
-	PieceSelectionMode int
 }
 
 func newTorrent(path string) Torrent {

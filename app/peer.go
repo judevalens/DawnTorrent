@@ -107,7 +107,7 @@ func (peer *Peer) stopReceiving(context context.Context){
 	}
 }
 
-func (peer *Peer) receive(context context.Context, msgChan chan BaseMsg) error {
+func (peer *Peer) receive(context context.Context, msgChan chan torrentMsg) error {
 
 	go peer.stopReceiving(context)
 

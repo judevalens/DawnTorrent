@@ -57,10 +57,10 @@ func TestTracker(t *testing.T){
 		return
 	}
 
-	peerManager := newPeerManager(nil,torrent.InfoHashHex)
+	peerManager := newPeerManager(nil,torrent.InfoHash,torrent.infoHashByte[:])
 	manager := NewTorrentManager(testTorrent)
 
-	_, _ = tracker.newTracker(torrent.AnnouncerUrl,torrent.InfoHashHex,manager,peerManager)
+	_, _ = tracker.NewAnnouncer(torrent.AnnouncerUrl,torrent.InfoHashHex,manager,peerManager)
 	_ = context.Background()
 
 }

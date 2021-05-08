@@ -22,7 +22,7 @@ type TorrentManager struct {
 	Torrent         *Torrent
 	PeerManager     *peerManager
 	stopMsgPipeLine chan interface{}
-	MsgChan         chan BaseMsg
+	MsgChan         chan torrentMsg
 	torrentState    int
 	Uploaded        int
 	TotalDownloaded int
@@ -46,7 +46,7 @@ func (manager *TorrentManager) GetStats() (int, int, int) {
 func NewTorrentManager(torrentPath string) *TorrentManager {
 	manager := new(TorrentManager)
 	manager.Torrent, _ = createNewTorrent(torrentPath)
-	manager.MsgChan = make(chan BaseMsg)
+	manager.MsgChan = make(chan torrentMsg)
 	manager.PeerManager = newPeerManager(manager.MsgChan, manager.Torrent.InfoHashHex,manager.Torrent.infoHashByte[:])
 	newScrapper, err := tracker.NewAnnouncer(manager.Torrent.AnnouncerUrl, manager.Torrent.InfoHash,manager,manager.PeerManager)
 

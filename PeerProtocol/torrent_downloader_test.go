@@ -58,7 +58,7 @@ func TestInitTorrentFile(t *testing.T) {
 			t.Errorf("End App is incorrect : got -> %v, want -> %v", testTorrentFileSingleFile.FileProperties[0].StartIndex,fileEndIndexTest)
 		}
 
-		if testTorrentFileSingleFile.FileProperties[0].Length != fileLengthTest {
+		if testTorrentFileSingleFile.FileProperties[0].BlockLength != fileLengthTest {
 			t.Errorf("file Len is incorrect : got -> %v, want -> %v", testTorrentFileSingleFile.FileProperties[0].StartIndex, fileLengthTest)
 		}
 

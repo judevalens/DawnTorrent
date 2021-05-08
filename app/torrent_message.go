@@ -5,7 +5,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
-	"fmt"
+	"math"
 )
 
 const (
@@ -23,6 +23,14 @@ const (
 )
 
 const (
+	defaultMsgLen = 1
+	requestMsgLen = 13
+	cancelMsgLen = 13
+	pieceMsgLen = 9
+	haveMsgLen = 5
+)
+
+const (
 	handShakeLen = 68
 )
 
@@ -31,15 +39,28 @@ var (
 	maxPiece   byte
 )
 
-type BaseMsg interface {
+type torrentMsg interface {
+	getId() int
 	handleMsg(manager *TorrentManager)
 	marshal() []byte
 
 }
 
-type Msg struct {
+type header struct {
 	ID     int
 	Length int
+}
+
+
+func (msg header) marshal() []byte {
+	panic("implement me")
+}
+
+func (msg header) handleMsg(manager *TorrentManager) {
+	panic("implement me")
+}
+func (msg header) getId() int{
+	return msg.ID
 }
 
 type HandShake struct {
@@ -86,16 +107,8 @@ func parseHandShake(data []byte) (*HandShake, error) {
 
 }
 
-func (msg Msg) handleRequest() {
-	panic("implement me")
-}
-
-func (msg Msg) handleMsg() {
-	fmt.Printf("not implemented yet, msg id: %v", msg.ID)
-}
-
 type HanShakeMsg struct {
-	BaseMsg
+	torrentMsg
 }
 
 func (h HanShakeMsg) handle() {
@@ -107,7 +120,7 @@ func (h HanShakeMsg) buildMsg(data []byte) {
 }
 
 type ChockedMSg struct {
-	BaseMsg
+	torrentMsg
 }
 
 func (msg ChockedMSg) handleMsg(manager *TorrentManager) {
@@ -116,7 +129,7 @@ func (msg ChockedMSg) handleMsg(manager *TorrentManager) {
 }
 
 type UnChockedMsg struct {
-	BaseMsg
+	torrentMsg
 }
 
 func (msg UnChockedMsg) handleMsg(manager *TorrentManager) {
@@ -125,7 +138,7 @@ func (msg UnChockedMsg) handleMsg(manager *TorrentManager) {
 }
 
 type InterestedMsg struct {
-	BaseMsg
+	torrentMsg
 }
 
 func (msg InterestedMsg) handleMsg(manager *TorrentManager) {
@@ -134,7 +147,7 @@ func (msg InterestedMsg) handleMsg(manager *TorrentManager) {
 }
 
 type UnInterestedMsg struct {
-	BaseMsg
+	torrentMsg
 }
 
 func (msg UnInterestedMsg) handleMsg(manager *TorrentManager) {
@@ -143,7 +156,7 @@ func (msg UnInterestedMsg) handleMsg(manager *TorrentManager) {
 }
 
 type HaveMsg struct {
-	BaseMsg
+	torrentMsg
 	PieceIndex int
 }
 
@@ -153,8 +166,9 @@ func (msg HaveMsg) handleMsg(manager *TorrentManager) {
 }
 
 type BitfieldMsg struct {
-	BaseMsg
-	Bitfield []byte
+	torrentMsg
+	Bitfield     []byte
+	BitFieldSize int
 }
 
 func (msg BitfieldMsg) handleMsg(manager *TorrentManager) {
@@ -163,10 +177,10 @@ func (msg BitfieldMsg) handleMsg(manager *TorrentManager) {
 }
 
 type RequestMsg struct {
-	BaseMsg
-	PieceIndex int
-	BeginIndex int
-	Length     int
+	torrentMsg
+	PieceIndex  int
+	BeginIndex  int
+	BlockLength int
 }
 
 func (msg RequestMsg) handleMsg(manager *TorrentManager) {
@@ -174,10 +188,10 @@ func (msg RequestMsg) handleMsg(manager *TorrentManager) {
 }
 
 type CancelRequestMsg struct {
-	BaseMsg
-	PieceIndex int
-	BeginIndex int
-	Length     int
+	torrentMsg
+	PieceIndex  int
+	BeginIndex  int
+	BlockLength int
 }
 
 func (msg CancelRequestMsg) handleMsg(manager *TorrentManager) {
@@ -185,50 +199,79 @@ func (msg CancelRequestMsg) handleMsg(manager *TorrentManager) {
 }
 
 type PieceMsg struct {
-	BaseMsg
-	PieceIndex int
-	BeginIndex int
-	data       []byte
+	torrentMsg
+	PieceIndex  int
+	BeginIndex  int
+	BlockLength int
+	block       []byte
 }
 
 func (msg PieceMsg) handleMsg(manager *TorrentManager) {
 	manager.handlePieceMsg(msg)
 }
 
-func parseBitfieldMsg(data []byte, baseMSg Msg) (BitfieldMsg, error) {
-	return BitfieldMsg{}, nil
+func parseBitfieldMsg(rawMsg []byte, baseMSg header) (BitfieldMsg, error) {
+	//TODO need to check for error
+	msg := BitfieldMsg{}
+	msg.torrentMsg = baseMSg
+	msg.BitFieldSize = int(math.Abs(float64(baseMSg.Length - defaultMsgLen)))
+	msg.Bitfield = rawMsg[5 :msg.BitFieldSize+5]
+	return msg, nil
+}
+func parseChockedMSg(data []byte, baseMSg header) (ChockedMSg, error) {
+	//TODO need to check for error
+	msg := ChockedMSg{baseMSg}
+	return msg, nil
+}
+func parseUnChockedMSg(data []byte, baseMSg header) (UnChockedMsg, error) {
+	//TODO need to check for error
+	msg := UnChockedMsg{baseMSg}
+	return msg, nil
+}
+func parseInterestedMsg(data []byte, baseMSg header) (InterestedMsg, error) {
+	//TODO need to check for error
+	msg := InterestedMsg{baseMSg}
+	return msg, nil
+}
+func parseUnInterestedMsg(data []byte, baseMSg header) (UnInterestedMsg, error) {
+	return UnInterestedMsg{baseMSg}, nil
+}
+func parseHaveMsg(rawMsg []byte, baseMSg header) (HaveMsg, error) {
+
+	msg := HaveMsg{}
+	msg.torrentMsg = baseMSg
+	msg.PieceIndex = int(binary.BigEndian.Uint32(rawMsg[5:9]))
+	return msg, nil
+}
+func parseRequestMsg(rawMsg []byte, baseMSg header) (RequestMsg, error) {
+	msg := RequestMsg{}
+	msg.torrentMsg = baseMSg
+	msg.PieceIndex = int(binary.BigEndian.Uint32(rawMsg[5:9]))
+	msg.BeginIndex = int(binary.BigEndian.Uint32(rawMsg[9:13]))
+	msg.BlockLength = int(binary.BigEndian.Uint32(rawMsg[13:17]))
+	return msg, nil
+}
+func parseCancelRequestMsg(rawMsg []byte, baseMSg header) (CancelRequestMsg, error) {
+	msg := CancelRequestMsg{}
+	msg.torrentMsg = baseMSg
+	msg.PieceIndex = int(binary.BigEndian.Uint32(rawMsg[5:9]))
+	msg.BeginIndex = int(binary.BigEndian.Uint32(rawMsg[9:13]))
+	msg.BlockLength = int(binary.BigEndian.Uint32(rawMsg[13:17]))
+	return msg, nil
+}
+func parsePieceMsg(rawMsg []byte, baseMSg header) (PieceMsg, error) {
+	msg := PieceMsg{}
+	msg.torrentMsg = baseMSg
+	msg.PieceIndex = int(binary.BigEndian.Uint32(rawMsg[5:9]))
+	msg.BeginIndex = int(binary.BigEndian.Uint32(rawMsg[9:13]))
+	msg.BlockLength = int(math.Abs(float64(baseMSg.Length - pieceMsgLen)))
+	msg.block = make([]byte, msg.BlockLength)
+
+	return msg,nil
 }
 
-func parseChockedMSg(data []byte, baseMSg Msg) (ChockedMSg, error) {
-	return ChockedMSg{}, nil
-}
-
-func parseUnChockedMSg(data []byte, baseMSg Msg) (UnChockedMsg, error) {
-	return UnChockedMsg{}, nil
-}
-func parseInterestedMsg(data []byte, baseMSg Msg) (InterestedMsg, error) {
-	return InterestedMsg{}, nil
-}
-
-func parseUnInterestedMsg(data []byte, baseMSg Msg) (UnInterestedMsg, error) {
-	return UnInterestedMsg{}, nil
-}
-
-func parseHaveMsg(data []byte, baseMSg Msg) (HaveMsg, error) {
-	return HaveMsg{}, nil
-}
-func parseRequestMsg(data []byte, baseMSg Msg) (RequestMsg, error) {
-	return RequestMsg{}, nil
-}
-func parseCancelRequestMsg(data []byte, baseMSg Msg) (CancelRequestMsg, error) {
-	return CancelRequestMsg{}, nil
-}
-func parsePieceMsg(data []byte, baseMSg Msg) (PieceMsg, error) {
-	return PieceMsg{}, nil
-}
-
-func ParseMsg(msg []byte, peer protocol.PeerI) (BaseMsg, error) {
-	baseMsg := Msg{}
+func ParseMsg(msg []byte, peer protocol.PeerI) (torrentMsg, error) {
+	baseMsg := header{}
 	if len(msg) < 5 {
 		return nil, errors.New("msg is too short")
 	}
@@ -259,4 +302,3 @@ func ParseMsg(msg []byte, peer protocol.PeerI) (BaseMsg, error) {
 
 	return nil, nil
 }
-

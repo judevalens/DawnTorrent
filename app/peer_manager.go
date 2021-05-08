@@ -29,7 +29,7 @@ type peerManager struct {
 	nActiveConnection     int
 	maxConnection         int
 	PeerOperationReceiver chan PeerOperation
-	msgReceiver           chan BaseMsg
+	msgReceiver           chan torrentMsg
 	server                *net.TCPListener
 	InfoHashHex           string
 	InfoHashByte          []byte
@@ -88,7 +88,7 @@ func (manager *peerManager) AddNewPeer(peers []protocol.PeerI) {
 
 }
 
-func newPeerManager(msgReceiver chan BaseMsg, infoHash string, InfoHashByte []byte) *peerManager {
+func newPeerManager(msgReceiver chan torrentMsg, infoHash string, InfoHashByte []byte) *peerManager {
 	peerManager := new(peerManager)
 	peerManager.InfoHashHex = infoHash
 	peerManager.InfoHashByte = InfoHashByte
@@ -105,7 +105,7 @@ func (manager *peerManager) addPeer(peer *Peer) *Peer {
 	peer.peerIndex = len(manager.Peers) - 1
 	return peer
 }
-func (manager *peerManager) handleNewPeer(connection *net.TCPConn) {
+func (manager *peerManager) handleConnectionRequest(connection *net.TCPConn) {
 	//var newPeer *Peer
 	var err error
 	_ = connection.SetKeepAlive(true)
