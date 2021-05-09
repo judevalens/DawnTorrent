@@ -15,30 +15,25 @@ const (
 	MultipleFile = iota
 )
 
-
 type Torrent struct {
-	AnnouncerUrl       string
-	AnnounceList       []string
-	Comment            string
-	CreatedBy          string
-	CreationDate       string
-	Encoding           string
-	piecesHash         string
-	FileMode           int
-	FilesMetadata      []fileMetadata
-	nPiece             int
-	FileLength         int
-	subPieceLength     int
-	nSubPiece          int
-	infoHashByte       [20]byte
-	InfoHashHex        string
-	InfoHash		string
-	pieceLength        int
-	Name               string
-}
-
-func newTorrent(path string) Torrent {
-	return Torrent{}
+	AnnouncerUrl   string
+	AnnounceList   []string
+	Comment        string
+	CreatedBy      string
+	CreationDate   string
+	Encoding       string
+	piecesHash     string
+	FileMode       int
+	FilesMetadata  []fileMetadata
+	nPiece         int
+	FileLength     int
+	subPieceLength int
+	nSubPiece      int
+	infoHashByte   [20]byte
+	InfoHashHex    string
+	InfoHash       string
+	pieceLength    int
+	Name           string
 }
 
 type fileMetadata struct {
@@ -49,10 +44,9 @@ type fileMetadata struct {
 	EndIndex   int
 }
 
-
-func createNewTorrent(torrentPath string) (*Torrent,error) {
+func createNewTorrent(torrentPath string) (*Torrent, error) {
 	torrentMap, err := parser.Unmarshall(torrentPath)
-	if err != nil{
+	if err != nil {
 		return nil, err
 	}
 	torrentFile := new(Torrent)
@@ -63,9 +57,9 @@ func createNewTorrent(torrentPath string) (*Torrent,error) {
 	torrentFile.InfoHashHex = hexInfoHash
 	torrentFile.InfoHash = string(torrentFile.infoHashByte[:])
 	torrentFile.AnnouncerUrl = torrentMap.Strings["announce"]
-	torrentFile.AnnounceList = make([]string,len(torrentMap.BLists["announce-list"].BLists))
+	torrentFile.AnnounceList = make([]string, len(torrentMap.BLists["announce-list"].BLists))
 
-	for i,announcerUrl := range torrentMap.BLists["announce-list"].BLists{
+	for i, announcerUrl := range torrentMap.BLists["announce-list"].BLists {
 		fmt.Printf("url : %v\n", announcerUrl.Strings)
 		if len(announcerUrl.Strings) > 0 {
 			torrentFile.AnnounceList[i] = announcerUrl.Strings[0]
@@ -99,7 +93,7 @@ func createNewTorrent(torrentPath string) (*Torrent,error) {
 		totalLength += fileLength
 		fileProperties = []fileMetadata{createFileProperties(fileProperties, filePath, fileLength, 0)}
 	}
-	return torrentFile,nil
+	return torrentFile, nil
 }
 
 // store the path , len , start and end index of file
@@ -150,7 +144,7 @@ type Piece struct {
 	SubPieceLen         int
 	State               int
 	Pieces              []byte
-	PieceIndex          int
+	QueueIndex          int
 	Availability        int
 	subPieceMask        []byte
 	pieceStartIndex     int

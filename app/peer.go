@@ -32,6 +32,7 @@ type Peer struct {
 	connection                      *net.TCPConn
 	lastPeerPendingRequestTimeStamp time.Time
 	isFree                          bool
+	pendingRequest 					[]pieceRequest
 }
 
 func (peer *Peer) SetConnection(conn *net.TCPConn) {
@@ -54,48 +55,8 @@ func (peer *Peer) GetConnection() *net.TCPConn {
 	return peer.connection
 }
 
-func  NewPeer(ip, port, id string) *Peer {
-	newPeer := new(Peer)
-	newPeer.id =id
-	newPeer.port = port
-	newPeer.ip = ip
-	newPeer.peerIsChocking = true
-	newPeer.interested = false
-	newPeer.chocked = true
-	newPeer.interested = false
-	newPeer.isFree = true
-	return newPeer
-}
-func  NewPeerFromBytes(peerData []byte) *Peer {
+func (peer *Peer) isAvailable()  {
 
-	ipByte := peerData[0:4]
-
-	ipString := ""
-	for i := range ipByte {
-
-		formatByte := make([]byte, 0)
-		formatByte = append(formatByte, 0)
-		formatByte = append(formatByte, ipByte[i])
-		n := binary.BigEndian.Uint16(formatByte)
-		//fmt.Printf("num byte %d\n", formatByte)
-		//fmt.Printf("num %v\n", n)
-
-		if i != len(ipByte)-1 {
-			ipString += strconv.FormatUint(uint64(n), 10) + "."
-		} else {
-			ipString += strconv.FormatUint(uint64(n), 10)
-		}
-	}
-
-	portBytes := binary.BigEndian.Uint16(peerData[4:6])
-	port := strconv.FormatUint(uint64(portBytes), 10)
-
-	log.Printf("peer addr: %v\n", ipString + ":" + port)
-
-	return NewPeer(ipString,strconv.FormatUint(uint64(portBytes), 10),ipString + ":" + port)
-}
-func NewPeerFromMap(peerData *parser.BMap) *Peer{
-	return NewPeer(peerData.Strings["ip"], peerData.Strings["port"],peerData.Strings["peer id"])
 }
 
 func (peer *Peer) stopReceiving(context context.Context){
@@ -140,4 +101,50 @@ func (peer *Peer) receive(context context.Context, msgChan chan torrentMsg) erro
 	}
 
 	return err
+}
+
+
+
+func  NewPeer(ip, port, id string) *Peer {
+	newPeer := new(Peer)
+	newPeer.id =id
+	newPeer.port = port
+	newPeer.ip = ip
+	newPeer.peerIsChocking = true
+	newPeer.interested = false
+	newPeer.chocked = true
+	newPeer.interested = false
+	newPeer.isFree = true
+	return newPeer
+}
+func  NewPeerFromBytes(peerData []byte) *Peer {
+
+	ipByte := peerData[0:4]
+
+	ipString := ""
+	for i := range ipByte {
+
+		formatByte := make([]byte, 0)
+		formatByte = append(formatByte, 0)
+		formatByte = append(formatByte, ipByte[i])
+		n := binary.BigEndian.Uint16(formatByte)
+		//fmt.Printf("num byte %d\n", formatByte)
+		//fmt.Printf("num %v\n", n)
+
+		if i != len(ipByte)-1 {
+			ipString += strconv.FormatUint(uint64(n), 10) + "."
+		} else {
+			ipString += strconv.FormatUint(uint64(n), 10)
+		}
+	}
+
+	portBytes := binary.BigEndian.Uint16(peerData[4:6])
+	port := strconv.FormatUint(uint64(portBytes), 10)
+
+	log.Printf("peer addr: %v\n", ipString + ":" + port)
+
+	return NewPeer(ipString,strconv.FormatUint(uint64(portBytes), 10),ipString + ":" + port)
+}
+func NewPeerFromMap(peerData *parser.BMap) *Peer{
+	return NewPeer(peerData.Strings["ip"], peerData.Strings["port"],peerData.Strings["peer id"])
 }

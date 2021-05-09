@@ -17,7 +17,7 @@ type dropPeerOperation struct {
 }
 
 func (operation dropPeerOperation) execute(context.Context) {
-	operation.swarm.DropConnection(operation.peer)
+	operation.swarm.DropPeer(operation.peer)
 }
 
 type IncomingPeerConnection struct {

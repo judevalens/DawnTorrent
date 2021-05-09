@@ -23,8 +23,7 @@ import (
 
 type peerManager struct {
 	activePeers map[string]*Peer
-	Peers       []*Peer
-	PeersMap    map[string]*Peer
+	peersId []string
 
 	nActiveConnection     int
 	maxConnection         int
@@ -98,13 +97,7 @@ func newPeerManager(msgReceiver chan torrentMsg, infoHash string, InfoHashByte [
 	return peerManager
 }
 
-func (manager *peerManager) addPeer(peer *Peer) *Peer {
-	manager.PeersMap[peer.id] = peer
-	// TODO That's probably redundant
-	manager.Peers = append(manager.Peers, peer)
-	peer.peerIndex = len(manager.Peers) - 1
-	return peer
-}
+
 func (manager *peerManager) handleConnectionRequest(connection *net.TCPConn) {
 	//var newPeer *Peer
 	var err error
@@ -139,6 +132,7 @@ func (manager *peerManager) handleConnectionRequest(connection *net.TCPConn) {
 	manager.AddNewPeer([]protocol.PeerI{newPeer})
 
 }
+
 func (manager *peerManager) connect(peer protocol.PeerI) error {
 	var err error
 	if err != nil {
@@ -223,7 +217,7 @@ func (manager *peerManager) CreatePeersFromHTTPTracker(peersInfo []*parser.BMap)
 	return peers
 }
 
-func (manager *peerManager) DropConnection(peer *Peer) {
+func (manager *peerManager) DropPeer(peer *Peer) {
 	/*
 		peer.connection = nil
 		peerSwarm.activeConnection.Remove(peer.id)
