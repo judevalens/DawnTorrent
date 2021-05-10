@@ -97,6 +97,9 @@ func newPeerManager(msgReceiver chan torrentMsg, infoHash string, InfoHashByte [
 	return peerManager
 }
 
+func (manager *peerManager) getAvailablePeer() (*Peer,error) {
+	return nil, nil
+}
 
 func (manager *peerManager) handleConnectionRequest(connection *net.TCPConn) {
 	//var newPeer *Peer

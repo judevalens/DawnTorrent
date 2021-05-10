@@ -55,9 +55,15 @@ func (peer *Peer) GetConnection() *net.TCPConn {
 	return peer.connection
 }
 
-func (peer *Peer) isAvailable()  {
+func (peer *Peer) isAvailable(pieceIndex int)  {
 
 }
+
+
+func (peer *Peer) sendMsg(msg []byte)(int,error){
+	return peer.connection.Write(msg)
+}
+
 
 func (peer *Peer) stopReceiving(context context.Context){
 	<- context.Done()

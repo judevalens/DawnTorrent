@@ -387,7 +387,7 @@ func (peerSwarm *PeerSwarm) udpTrackerRequest(event int) (UdpMSG, error) {
 
 					}
 
-					//fmt.Printf("\n Annouce msg byte \n %v \n peer Len %v", announceMsg,len(announceResponse.peersAddresses))
+					//fmt.Printf("\n Annouce msg byte \n %v \n peer pieceLength %v", announceMsg,len(announceResponse.peersAddresses))
 
 				}
 

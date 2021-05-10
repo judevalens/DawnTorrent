@@ -153,7 +153,7 @@ func (torrent *Torrent) msgRouter(msg *MSG) {
 
 			}
 		} else {
-			//fmt.Printf("correctlen %v actual Len %v", bitfieldCorrectLen, len(msg.BitfieldRaw))
+			//fmt.Printf("correctlen %v actual pieceLength %v", bitfieldCorrectLen, len(msg.BitfieldRaw))
 		}
 
 		torrent.Downloader.SortPieceByAvailability()

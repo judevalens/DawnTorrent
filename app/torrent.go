@@ -15,6 +15,7 @@ const (
 	MultipleFile = iota
 )
 
+
 type Torrent struct {
 	AnnouncerUrl   string
 	AnnounceList   []string
@@ -34,6 +35,7 @@ type Torrent struct {
 	InfoHash       string
 	pieceLength    int
 	Name           string
+	pieces []*Piece
 }
 
 type fileMetadata struct {
@@ -93,7 +95,26 @@ func createNewTorrent(torrentPath string) (*Torrent, error) {
 		totalLength += fileLength
 		fileProperties = []fileMetadata{createFileProperties(fileProperties, filePath, fileLength, 0)}
 	}
+	torrentFile.buildPieces()
+
 	return torrentFile, nil
+}
+
+func (torrent *Torrent) buildPieces()  {
+	for i,_ := range torrent.pieces {
+
+		pieceLen := torrent.pieceLength
+
+		startIndex := i*torrent.pieceLength
+		currentTotalLength := startIndex+pieceLen
+
+		if currentTotalLength > torrent.FileLength{
+			pieceLen = currentTotalLength % torrent.FileLength
+		}
+
+		torrent.pieces[i] = NewPiece(torrent, i, pieceLen, notStarted)
+	}
+
 }
 
 // store the path , len , start and end index of file
@@ -139,16 +160,17 @@ func GetInfoHash(dict *parser.BMap) ([20]byte, string) {
 }
 
 type Piece struct {
-	Len                 int
-	CurrentLen          int
-	SubPieceLen         int
-	State               int
-	Pieces              []byte
-	QueueIndex          int
-	Availability        int
-	subPieceMask        []byte
-	pieceStartIndex     int
-	pieceEndIndex       int
+	pieceLength     int
+	CurrentLen      int
+	SubPieceLen     int
+	PieceIndex      int
+	State           int
+	Pieces          []byte
+	QueueIndex      int
+	Availability    int
+	subPieceMask    []byte
+	pieceStartIndex int
+	pieceEndIndex   int
 	position            []int
 	pendingRequestMutex *sync.RWMutex
 
@@ -156,17 +178,67 @@ type Piece struct {
 	AvailabilityIndex int
 }
 
+func (piece Piece) getSubPieceLength(index int) (int,int,bool) {
+
+	startIndex := piece.CurrentLen+(subPieceLen*(index))
+	currentTotalLength := piece.CurrentLen+(subPieceLen*(index + 1))
+
+	if currentTotalLength > piece.pieceLength{
+		return  startIndex,currentTotalLength % piece.pieceLength,true
+	}
+
+	return  startIndex,subPieceLen,false
+}
+
+func (piece Piece) getNextRequest(nRequest int) []*pieceRequest {
+	var requests []*pieceRequest
+
+	for i := 0; i < nRequest; i++ {
+		startIndex, currentSubPieceLength, endOfPiece := piece.getSubPieceLength(i)
+
+		if endOfPiece {
+			return requests
+		}
+
+		msgLength := requestMsgLen + currentSubPieceLength
+
+
+		msg := RequestMsg{
+			torrentMsg : header{
+				RequestMsgId,
+				msgLength,
+			},
+			PieceIndex: piece.PieceIndex,
+			BeginIndex: startIndex,
+			BlockLength: currentSubPieceLength,
+		}
+
+		req := &pieceRequest{
+			fullFilled: false,
+			RequestMsg:msg,
+			providers: make([]*Peer,0),
+		}
+
+		requests = append(requests,req)
+
+	}
+
+	return requests
+}
+
 //	Creates a Piece object and initialize subPieceRequest for this piece
+
 func NewPiece(downloader *Torrent, PieceIndex, pieceLength int, status int) *Piece {
 	newPiece := new(Piece)
 
-	newPiece.Len = pieceLength
+	newPiece.pieceLength = pieceLength
+
 	newPiece.Availability = 0
 	newPiece.PieceIndex = PieceIndex
 	newPiece.pieceStartIndex = PieceIndex * downloader.pieceLength
-	newPiece.pieceEndIndex = newPiece.pieceStartIndex + newPiece.Len
+	newPiece.pieceEndIndex = newPiece.pieceStartIndex + newPiece.pieceLength
 	newPiece.nSubPiece = int(math.Ceil(float64(pieceLength) / float64(downloader.subPieceLength)))
-	//newPiece.Pieces = make([]byte, newPiece.Len)
+	//newPiece.Pieces = make([]byte, newPiece.pieceLength)
 	newPiece.State = status
 	newPiece.subPieceMask = make([]byte, int(math.Ceil(float64(newPiece.nSubPiece)/float64(8))))
 	newPiece.pendingRequestMutex = new(sync.RWMutex)
@@ -174,13 +246,13 @@ func NewPiece(downloader *Torrent, PieceIndex, pieceLength int, status int) *Pie
 	for i := 0; i < newPiece.nSubPiece; i++ {
 		newPiece.SubPieceLen = downloader.subPieceLength
 		if i == newPiece.nSubPiece-1 {
-			if newPiece.Len%downloader.subPieceLength != 0 {
-				newPiece.SubPieceLen = newPiece.Len % downloader.subPieceLength
+			if newPiece.pieceLength%downloader.subPieceLength != 0 {
+				newPiece.SubPieceLen = newPiece.pieceLength % downloader.subPieceLength
 				println("newPiece.SubPieceLen")
 				println(newPiece.SubPieceLen)
-				fmt.Printf("pieceLen %v\n", newPiece.Len)
+				fmt.Printf("pieceLen %v\n", newPiece.pieceLength)
 
-				if newPiece.Len != 1048576 {
+				if newPiece.pieceLength != 1048576 {
 
 				}
 			}
@@ -190,3 +262,4 @@ func NewPiece(downloader *Torrent, PieceIndex, pieceLength int, status int) *Pie
 	return newPiece
 
 }
+

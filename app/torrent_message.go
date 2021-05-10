@@ -183,8 +183,8 @@ type RequestMsg struct {
 	BlockLength int
 }
 
-func (msg RequestMsg) handleMsg(manager *TorrentManager) {
-	manager.handleRequestMsg(msg)
+func (request RequestMsg) handleMsg(manager *TorrentManager) {
+	manager.handleRequestMsg(request)
 }
 
 type CancelRequestMsg struct {

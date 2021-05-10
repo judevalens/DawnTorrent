@@ -31,11 +31,11 @@ func TestInitTorrentFile(t *testing.T) {
 	}
 
 	if testTorrentFileSingleFile.FileLength != fileLenTest {
-		t.Errorf("file Len is incorrect: got -> %v, want -> %v", testTorrentFileSingleFile.FileLength, fileLenTest)
+		t.Errorf("file pieceLength is incorrect: got -> %v, want -> %v", testTorrentFileSingleFile.FileLength, fileLenTest)
 	}
 
 		if testTorrentFileSingleFile.pieceLength != filePieceLenTest {
-			t.Errorf("piece Len is incorrect: got -> %v, want -> %v", testTorrentFileSingleFile.pieceLength, filePieceLenTest)
+			t.Errorf("piece pieceLength is incorrect: got -> %v, want -> %v", testTorrentFileSingleFile.pieceLength, filePieceLenTest)
 		}
 
 		// TODO add more extensive test for the metadata
@@ -59,7 +59,7 @@ func TestInitTorrentFile(t *testing.T) {
 		}
 
 		if testTorrentFileSingleFile.FileProperties[0].BlockLength != fileLengthTest {
-			t.Errorf("file Len is incorrect : got -> %v, want -> %v", testTorrentFileSingleFile.FileProperties[0].StartIndex, fileLengthTest)
+			t.Errorf("file pieceLength is incorrect : got -> %v, want -> %v", testTorrentFileSingleFile.FileProperties[0].StartIndex, fileLengthTest)
 		}
 
 		if testTorrentFileSingleFile.FileProperties[0].FileIndex != fileIndexTest {
