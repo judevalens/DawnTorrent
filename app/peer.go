@@ -33,6 +33,15 @@ type Peer struct {
 	lastPeerPendingRequestTimeStamp time.Time
 	isFree                          bool
 	pendingRequest 					[]pieceRequest
+	bitfield						[]byte
+}
+
+func (peer *Peer) GetBitfield() []byte {
+	return peer.bitfield
+}
+
+func (peer *Peer) SetBitField(bitfield []byte) {
+	peer.bitfield = bitfield
 }
 
 func (peer *Peer) SetConnection(conn *net.TCPConn) {
@@ -109,7 +118,18 @@ func (peer *Peer) receive(context context.Context, msgChan chan torrentMsg) erro
 	return err
 }
 
+func  (peer *Peer) hasPiece(pieceIndex int)bool{
 
+	index := pieceIndex/8
+
+	if index < len(peer.bitfield){
+		return false
+	}
+
+	currentByte := peer.bitfield[index]
+
+	return currentByte == 255
+}
 
 func  NewPeer(ip, port, id string) *Peer {
 	newPeer := new(Peer)

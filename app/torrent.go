@@ -207,6 +207,7 @@ func (piece Piece) getNextRequest(nRequest int) []*pieceRequest {
 			torrentMsg : header{
 				RequestMsgId,
 				msgLength,
+				nil,
 			},
 			PieceIndex: piece.PieceIndex,
 			BeginIndex: startIndex,

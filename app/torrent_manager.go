@@ -179,6 +179,13 @@ func (manager *TorrentManager) handleChokeMsg(msg ChockedMSg) {
 func (manager *TorrentManager) handleHaveMsg(msg HaveMsg) {
 }
 func (manager *TorrentManager) handleBitFieldMsg(msg BitfieldMsg) {
+	msg.getPeer().SetBitField(msg.Bitfield)
+
+	for _,_ = range manager.Torrent.pieces{
+
+		print("hahha\n")
+
+	}
 }
 
 func (manager *TorrentManager) handlePieceMsg(msg PieceMsg) {

@@ -58,6 +58,7 @@ var (
 type BaseMSG interface {
 	handle()
 	buildMsg(data []byte)
+	getPeer() *Peer
 }
 
 

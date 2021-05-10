@@ -43,14 +43,19 @@ type torrentMsg interface {
 	getId() int
 	handleMsg(manager *TorrentManager)
 	marshal() []byte
+	getPeer() protocol.PeerI
 
 }
 
 type header struct {
 	ID     int
 	Length int
+	peer protocol.PeerI
 }
 
+func (msg header) getPeer() protocol.PeerI {
+	return msg.peer
+}
 
 func (msg header) marshal() []byte {
 	panic("implement me")
@@ -272,6 +277,7 @@ func parsePieceMsg(rawMsg []byte, baseMSg header) (PieceMsg, error) {
 
 func ParseMsg(msg []byte, peer protocol.PeerI) (torrentMsg, error) {
 	baseMsg := header{}
+	baseMsg.peer = peer
 	if len(msg) < 5 {
 		return nil, errors.New("msg is too short")
 	}

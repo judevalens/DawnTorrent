@@ -31,4 +31,6 @@ type PeerI interface {
 	GetAddress() *net.TCPAddr
 	SetConnection(conn *net.TCPConn)
 	GetConnection() *net.TCPConn
+	GetBitfield() []byte
+	SetBitField(bitfield []byte)
 }
