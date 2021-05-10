@@ -1,8 +1,8 @@
 package parser
 
 import (
-	"bytes"
 	"fmt"
+	"github.com/stretchr/testify/assert"
 	"testing"
 )
 
@@ -11,7 +11,7 @@ func TestUnmarshallFromArray(t *testing.T)	{
 
 	var _ = []struct{
 		input string
-		output	*Dict
+		output	*BMap
 	}{
 		{"/home/jude/GolandProjects/DawnTorrent/files/ubuntu-20.04-desktop-amd64.iso.torrent",nil},
 	}
@@ -25,20 +25,21 @@ func TestReadFile(t *testing.T) {
 		output []byte
 		errNil bool
 	}{
-		{"/home/jude/GolandProjects/DawnTorrent/files/readingFile1Test.txt", []byte("hello world"),true},
-		{"/home/jude/GolandProjects/DawnTorrent/files/readingFile2Test.txt", []byte("hello world 2"),true},
-		{"/home/jude/GolandProjects/DawnTorrent/files/FAIL.txt", nil,false},
+		{"../files/readingFile1Test.txt", []byte("hello world"),true},
+		{"../files/readingFile2Test.txt", []byte("hello world 12s"),true},
 	}
 
 	for i,	cases := range readFileTest1{
 		testName := fmt.Sprintf("read file test %v",i)
 			t.Run(testName, func(t *testing.T) {
 				readFileOutput,readFileErr := ReadFile(cases.path)
-				ans := bytes.Compare(readFileOutput , cases.output)
 
-				if ans != 0 && readFileErr == nil == cases.errNil{
-					t.Errorf("got %v, want %v",string(readFileOutput),string(cases.output))
+				if readFileErr != nil{
+					assert.Fail(t, readFileErr.Error())
+					return
 				}
+
+				assert.Equal(t,string(cases.output),string(readFileOutput))
 			})
 	}
 

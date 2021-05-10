@@ -1,17 +1,14 @@
 package parser
 
 import (
+	"DawnTorrent/utils"
 	"io/ioutil"
 	"os"
-	"DawnTorrent/utils"
 )
 
 
 const (
 )
-
-
-
 func SaveTorrentFile(file []byte, fileName string) {
 	_ = os.Mkdir(utils.TorrentHomeDir, os.ModeDir)
 	fileName = utils.TorrentHomeDir + "/" + fileName

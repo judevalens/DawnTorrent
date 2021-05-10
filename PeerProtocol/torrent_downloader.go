@@ -36,36 +36,38 @@ const (
 func initDownloader(torrentPath string) *TorrentDownloader {
 	downloader := new(TorrentDownloader)
 
-	metaInfo := parser.Unmarshall(torrentPath)
+	metaInfo, _ := parser.Unmarshall(torrentPath)
 
 	infoHashString, infoHashByte := GetInfoHash(metaInfo)
 	downloader.InfoHash = infoHashString
 	downloader.infoHashByte = infoHashByte
 	downloader.InfoHashHex = hex.EncodeToString(downloader.infoHashByte[:])
-	downloader.Announce = metaInfo.MapString["announce"]
+	downloader.Announce = metaInfo.Strings["announce"]
 
 	downloader.AnnounceList = make([]string, 0)
-	downloader.CreationDate = metaInfo.MapString["creation date"]
-	downloader.Encoding = metaInfo.MapString["encoding"]
-	downloader.piecesSha1Hash = metaInfo.MapDict["info"].MapString["pieces"]
-	downloader.pieceLength, _ = strconv.Atoi(metaInfo.MapDict["info"].MapString["piece length"])
-	_, isPresent := metaInfo.MapDict["info"].MapList["files"]
+	downloader.CreationDate = metaInfo.Strings["creation date"]
+	downloader.Encoding = metaInfo.Strings["encoding"]
+	downloader.piecesSha1Hash = metaInfo.BMaps["info"].Strings["pieces"]
+	downloader.pieceLength, _ = strconv.Atoi(metaInfo.BMaps["info"].Strings["piece length"])
+	_, isPresent := metaInfo.BMaps["info"].BLists["files"]
 	fileProperties := make([]*fileProperty, 0)
-	downloader.Name = metaInfo.MapDict["info"].MapString["name"]
+	downloader.Name = metaInfo.BMaps["info"].Strings["name"]
 	totalLength := 0
+
+
 	if isPresent {
 		downloader.FileMode = 1
-		for fileIndex, v := range metaInfo.MapDict["info"].MapList["files"].LDict {
-			filePath := v.MapList["path"].LString[0]
-			fileLength, _ := strconv.Atoi(v.MapString["length"])
+		for fileIndex, v := range metaInfo.BMaps["info"].BLists["files"].BMaps {
+			filePath := v.BLists["path"].Strings[0]
+			fileLength, _ := strconv.Atoi(v.Strings["length"])
 			totalLength += fileLength
 			newFile := createFileProperties(fileProperties, filePath, fileLength, fileIndex)
 			fileProperties = append(fileProperties, newFile)
 		}
 	} else {
 		downloader.FileMode = 0
-		filePath := metaInfo.MapDict["info"].MapString["name"]
-		fileLength, _ := strconv.Atoi(metaInfo.MapDict["info"].MapString["length"])
+		filePath := metaInfo.BMaps["info"].Strings["name"]
+		fileLength, _ := strconv.Atoi(metaInfo.BMaps["info"].Strings["length"])
 		totalLength += fileLength
 		fileProperties = append(fileProperties, createFileProperties(fileProperties, filePath, fileLength, 0))
 	}
@@ -75,7 +77,7 @@ func initDownloader(torrentPath string) *TorrentDownloader {
 	downloader.PieceSelectionMode = sequentialSelection
 	downloader.SelectNewPiece = true
 
-	fmt.Printf("\n downloader Len %v , pieceLen %v, subPieceLength %v, n SubPieces %v \n", downloader.FileLength, downloader.pieceLength, downloader.subPieceLength, downloader.nSubPiece)
+	fmt.Printf("\n downloader pieceLength %v , pieceLen %v, subPieceLength %v, n SubPieces %v \n", downloader.FileLength, downloader.pieceLength, downloader.subPieceLength, downloader.nSubPiece)
 	return downloader
 }
 
@@ -172,13 +174,13 @@ func (downloader *TorrentDownloader) saveTorrent() {
 	SavedTorrentDataJSONEncoder.SetIndent("", "")
 	_ = SavedTorrentDataJSONEncoder.Encode(SavedTorrentData)
 
-	pieceHashPath := utils.GetPath(utils.PieceHashPath, downloader.Name,"piecesHash.sha1")
+	pieceHashPath := utils.GetPath(utils.PieceHashPath, downloader.Name, "piecesHash.sha1")
 
 	if _, err := os.Stat(pieceHashPath); os.IsNotExist(err) {
 		_ = ioutil.WriteFile(pieceHashPath, []byte(downloader.piecesSha1Hash), os.ModePerm)
 	}
 
-	savedTorrentDataPath := utils.GetPath(utils.TorrentDataPath, downloader.Name,downloader.Name+".json")
+	savedTorrentDataPath := utils.GetPath(utils.TorrentDataPath, downloader.Name, downloader.Name+".json")
 	wErr := ioutil.WriteFile(savedTorrentDataPath, SavedTorrentDataBuffer.Bytes(), os.ModePerm)
 	if wErr != nil {
 		fmt.Printf("%v", wErr)
@@ -333,13 +335,13 @@ func createFileProperties(fileProperties []*fileProperty, filePath string, fileL
 }
 
 // calculates the info hash based on pieces provided in the .torrent file
-func GetInfoHash(dict *parser.Dict) (string, [20]byte) {
+func GetInfoHash(dict *parser.BMap) (string, [20]byte) {
 
 	// InnerStartingPosition leaves out the key
 
-	startingPosition := dict.MapDict["info"].KeyInfo.InnerStartingPosition
+	startingPosition := dict.BMaps["info"].KeyInfo.InnerStartingPosition
 
-	endingPosition := dict.MapDict["info"].KeyInfo.EndingPosition
+	endingPosition := dict.BMaps["info"].KeyInfo.EndingPosition
 
 	torrentFileString := parser.ToBencode(dict)
 
@@ -386,7 +388,7 @@ func NewPiece(downloader *TorrentDownloader, PieceIndex, pieceLength int, status
 	newPiece.pieceStartIndex = PieceIndex * downloader.pieceLength
 	newPiece.pieceEndIndex = newPiece.pieceStartIndex + newPiece.Len
 	newPiece.nSubPiece = int(math.Ceil(float64(pieceLength) / float64(downloader.subPieceLength)))
-	//newPiece.Pieces = make([]byte, newPiece.Len)
+	//newPiece.Pieces = make([]byte, newPiece.pieceLength)
 	newPiece.State = status
 	newPiece.subPieceMask = make([]byte, int(math.Ceil(float64(newPiece.nSubPiece)/float64(8))))
 	newPiece.pendingRequestMutex = new(sync.RWMutex)
@@ -412,7 +414,7 @@ func NewPiece(downloader *TorrentDownloader, PieceIndex, pieceLength int, status
 
 		pendingRequest.startIndex = i * SubPieceLen
 
-		msg := MSG{MsgID: RequestMsg, PieceIndex: newPiece.PieceIndex, BeginIndex: pendingRequest.startIndex, PieceLen: newPiece.SubPieceLen}
+		msg := MSG{ID: RequestMsg, PieceIndex: newPiece.PieceIndex, BeginIndex: pendingRequest.startIndex, PieceLen: newPiece.SubPieceLen}
 
 		pendingRequest.msg = GetMsg(msg, nil)
 		pendingRequest.status = nonStartedRequest
@@ -535,7 +537,7 @@ func (downloader *TorrentDownloader) fileAssembler() {
 				// once a piece is complete we write the it to downloader
 				if isPieceComplete {
 					var errWritingPiece error
-					fmt.Printf(" currentPiece.Len %v, currentPiece.CurrentLen %v\n", currentPiece.Len, currentPiece.CurrentLen)
+					fmt.Printf(" currentPiece.pieceLength %v, currentPiece.CurrentLen %v\n", currentPiece.Len, currentPiece.CurrentLen)
 
 					if !downloader.isPieceValid(currentPiece) {
 
@@ -566,11 +568,11 @@ func (downloader *TorrentDownloader) fileAssembler() {
 							var errOpenFile error
 
 							var path string
-							if len(downloader.FileProperties) > 1{
-								path = utils.GetPath(utils.DownloadedFile,downloader.Name,currentFile.Path)
-							}else{
-								path = utils.GetPath(utils.DownloadedFile,"",currentFile.Path)
-								}
+							if len(downloader.FileProperties) > 1 {
+								path = utils.GetPath(utils.DownloadedFile, downloader.Name, currentFile.Path)
+							} else {
+								path = utils.GetPath(utils.DownloadedFile, "", currentFile.Path)
+							}
 
 							f, errOpenFile = os.OpenFile(path, os.O_CREATE|os.O_RDWR, os.ModePerm)
 							if errOpenFile != nil {
@@ -613,7 +615,7 @@ func (downloader *TorrentDownloader) fileAssembler() {
 					}
 
 				} else {
-					//	fmt.Printf("not complete yet , %v/%v pieceindex : %v\n",currentPiece.Len,currentPiece.CurrentLen,currentPiece.PieceIndex)
+					//	fmt.Printf("not complete yet , %v/%v pieceindex : %v\n",currentPiece.pieceLength,currentPiece.CurrentLen,currentPiece.PieceIndex)
 					currentPiece.State = InProgressPiece
 					downloader.SelectNewPiece = false
 				}
@@ -691,7 +693,7 @@ func (downloader *TorrentDownloader) PieceRequestManager(periodic *periodicFunc)
 			downloader.SelectNewPiece = false
 		} else {
 
-			//fmt.Printf("not complete yet , currentLen %v , actual Len %v\n",currentPiece.CurrentLen,currentPiece.Len)
+			//fmt.Printf("not complete yet , currentLen %v , actual pieceLength %v\n",currentPiece.CurrentLen,currentPiece.pieceLength)
 		}
 		currentPiece := downloader.Pieces[downloader.CurrentPieceIndex]
 		if !downloader.SelectNewPiece && len(currentPiece.neededSubPiece) == 0 && len(currentPiece.pendingRequest) == 0 {

@@ -1,8 +1,6 @@
 package PeerProtocol
 
 import (
-	"encoding/hex"
-	"strings"
 	"testing"
 )
 func TestnewFileInfo(t *testing.T){
@@ -10,6 +8,7 @@ func TestnewFileInfo(t *testing.T){
 	//fileInfos := make([]*fileProperty,fileInfosSize)
 }
 
+/*
 func TestInitTorrentFile(t *testing.T) {
 	torrent := new(Torrent)
 	testTorrentFileSingleFile := initDownloader(torrent,"/home/jude/GolandProjects/DawnTorrent/files/ubuntu-20.04-desktop-amd64.iso.torrent")
@@ -32,11 +31,11 @@ func TestInitTorrentFile(t *testing.T) {
 	}
 
 	if testTorrentFileSingleFile.FileLength != fileLenTest {
-		t.Errorf("file Len is incorrect: got -> %v, want -> %v", testTorrentFileSingleFile.FileLength, fileLenTest)
+		t.Errorf("file pieceLength is incorrect: got -> %v, want -> %v", testTorrentFileSingleFile.FileLength, fileLenTest)
 	}
 
 		if testTorrentFileSingleFile.pieceLength != filePieceLenTest {
-			t.Errorf("piece Len is incorrect: got -> %v, want -> %v", testTorrentFileSingleFile.pieceLength, filePieceLenTest)
+			t.Errorf("piece pieceLength is incorrect: got -> %v, want -> %v", testTorrentFileSingleFile.pieceLength, filePieceLenTest)
 		}
 
 		// TODO add more extensive test for the metadata
@@ -59,8 +58,8 @@ func TestInitTorrentFile(t *testing.T) {
 			t.Errorf("End App is incorrect : got -> %v, want -> %v", testTorrentFileSingleFile.FileProperties[0].StartIndex,fileEndIndexTest)
 		}
 
-		if testTorrentFileSingleFile.FileProperties[0].Length != fileLengthTest {
-			t.Errorf("file Len is incorrect : got -> %v, want -> %v", testTorrentFileSingleFile.FileProperties[0].StartIndex, fileLengthTest)
+		if testTorrentFileSingleFile.FileProperties[0].BlockLength != fileLengthTest {
+			t.Errorf("file pieceLength is incorrect : got -> %v, want -> %v", testTorrentFileSingleFile.FileProperties[0].StartIndex, fileLengthTest)
 		}
 
 		if testTorrentFileSingleFile.FileProperties[0].FileIndex != fileIndexTest {
@@ -70,5 +69,7 @@ func TestInitTorrentFile(t *testing.T) {
 	})
 
 }
+*/
+
 
 
