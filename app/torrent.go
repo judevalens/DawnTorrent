@@ -10,6 +10,7 @@ import (
 	"math"
 	"strconv"
 	"sync"
+	"sync/atomic"
 )
 
 const (
@@ -184,12 +185,12 @@ type Piece struct {
 	State               int
 	Pieces              []byte
 	QueueIndex          int
-	Availability        int
+	Availability        int64
 	subPieceMask        []byte
 	pieceStartIndex     int
 	pieceEndIndex       int
 	position            []int
-	pendingRequestMutex *sync.RWMutex
+	mutex				*sync.Mutex
 	owners              map[string]bool
 	mask                int
 	nSubPiece           int
@@ -247,10 +248,11 @@ func (piece Piece) getNextRequest(nRequest int) []*pieceRequest {
 
 //	Increments a piece availability is a peer a possesses it, decrements it if the peer is choking or has disconnected
 func (piece Piece)  updateAvailability(action int,peer protocol.PeerI){
+	piece.mutex.Lock()
 	peer.GetMutex().Lock()
 	if action == 1 {
 		if peer.HasPiece(piece.PieceIndex){
-			piece.Availability++
+			atomic.AddInt64(&piece.Availability,1)
 			piece.owners[peer.GetId()] = true
 
 			log.Printf("peer has piece # %v\n",piece.PieceIndex)
@@ -259,12 +261,13 @@ func (piece Piece)  updateAvailability(action int,peer protocol.PeerI){
 		}
 	}else{
 		if peer.HasPiece(piece.PieceIndex){
-			piece.Availability--
+			atomic.AddInt64(&piece.Availability,-1)
 			delete(piece.owners,peer.GetId())
 
 		}
 	}
 	peer.GetMutex().Unlock()
+	piece.mutex.Unlock()
 
 }
 
@@ -281,6 +284,7 @@ func NewPiece(downloader *Torrent, PieceIndex, pieceLength int, status int) *Pie
 	newPiece.pieceEndIndex = newPiece.pieceStartIndex + newPiece.pieceLength
 	newPiece.State = status
 	newPiece.owners = make(map[string]bool)
+	newPiece.mutex = new(sync.Mutex)
 
 	return newPiece
 

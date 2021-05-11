@@ -32,6 +32,7 @@ type TorrentManager struct {
 	scrapper        *tracker.Announcer
 	state           int
 	myState         torrentManagerStateI
+	downloader torrentDownloader
 }
 
 func (manager *TorrentManager) GetAnnounceList() []string {
@@ -183,9 +184,10 @@ func (manager *TorrentManager) handleBitFieldMsg(msg BitfieldMsg) {
 
 	peer := msg.getPeer()
 	peer.SetBitField(msg.Bitfield)
+
 	for _,piece := range manager.Torrent.pieces{
 		piece.updateAvailability(1,peer)
-
+		manager.downloader.updatePiecePriority(piece.QueueIndex)
 	}
 
 }

@@ -1,27 +1,17 @@
 package app
 
-import (
-	"DawnTorrent/protocol"
-	"context"
-)
+import "DawnTorrent/protocol"
 
-type updatePieceAvailability struct {
-	pieces []*Piece
-	peer	protocol.PeerI
-	action 	int
+type pieceAvailabilityUpdate struct {
+	piece *Piece
+	action int
+	peer protocol.PeerI
+	fixQueue updatePiecePriority
 }
 
-
-func (operation updatePieceAvailability) Execute(ctx context.Context)  {
-
-	for i,piece := range operation.pieces{
-		if operation.peer.HasPiece(i){
-				if operation.action == 1{
-					piece.Availability++
-					piece.owners[operation.peer.GetId()] = true
-
-				}
-		}
-
+func (operation pieceAvailabilityUpdate) Execute()  {
+	operation.piece.updateAvailability(operation.action,operation.peer)
+	if operation.piece.QueueIndex > -1 {
+		operation.fixQueue(operation.piece.QueueIndex)
 	}
 }

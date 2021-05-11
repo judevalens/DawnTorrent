@@ -79,7 +79,7 @@ type Piece struct {
 	pieceStartIndex     int
 	pieceEndIndex       int
 	position            []pos
-	pendingRequestMutex *sync.RWMutex
+	mutex 				*sync.RWMutex
 	pendingRequest      []*PieceRequest
 	neededSubPiece      []*PieceRequest
 	completedRequest	[]*PieceRequest

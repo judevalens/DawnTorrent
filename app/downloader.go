@@ -1,6 +1,7 @@
 package app
 
 import (
+	"DawnTorrent/protocol"
 	"container/heap"
 	"context"
 	"errors"
@@ -85,7 +86,11 @@ type torrentDownloader struct {
 	queue 			[]*pieceRequest
 	ticker 			chan time.Time
 
+	operationChan 	chan protocol.Operation
+
 }
+
+type updatePiecePriority func(i int)
 
 func newTorrentDownloader() torrentDownloader {
 	return torrentDownloader{}
@@ -106,7 +111,6 @@ func (downloader *torrentDownloader) start(ctx context.Context){
 		}
 	}
 }
-
 
 func (downloader *torrentDownloader) download(ctx context.Context) {
 
@@ -148,7 +152,6 @@ func (downloader *torrentDownloader) download(ctx context.Context) {
 	}
 
 }
-
 
 func  (downloader *torrentDownloader) sendRequest(peer *Peer,pieceRequest ...*pieceRequest){
 
@@ -194,6 +197,25 @@ func (downloader *torrentDownloader) selectPiece() (*Piece, error) {
 	return selectedPiece, err
 
 }
+
+
+
+func (downloader *torrentDownloader) execOperation(ctx context.Context)  {
+
+	for{
+		select {
+		case <- ctx.Done():
+			return
+		case operation := <- downloader.operationChan:
+			operation.Execute(ctx)
+		}
+
+	}
+
+}
+
+
+
 
 func (downloader *torrentDownloader) write(msg PieceMsg) {
 

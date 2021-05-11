@@ -131,8 +131,6 @@ func  (peer *Peer) HasPiece(pieceIndex int)bool{
 
 	bitIndex := 7 - (pieceIndex % 8)
 
-
-
 	return  utils.IsBitOn(peer.bitfield[byteIndex],bitIndex)
 
 }
