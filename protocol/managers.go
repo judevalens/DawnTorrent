@@ -4,6 +4,7 @@ import (
 	"DawnTorrent/parser"
 	"context"
 	"net"
+	"sync"
 )
 
 const (
@@ -33,4 +34,7 @@ type PeerI interface {
 	GetConnection() *net.TCPConn
 	GetBitfield() []byte
 	SetBitField(bitfield []byte)
+	HasPiece(pieceIndex int)bool
+	GetMutex()*sync.Mutex
+
 }

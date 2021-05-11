@@ -27,7 +27,7 @@ type peerManager struct {
 
 	nActiveConnection     int
 	maxConnection         int
-	PeerOperationReceiver chan PeerOperation
+	PeerOperationReceiver chan protocol.Operation
 	msgReceiver           chan torrentMsg
 	server                *net.TCPListener
 	InfoHashHex           string
@@ -92,7 +92,7 @@ func newPeerManager(msgReceiver chan torrentMsg, infoHash string, InfoHashByte [
 	peerManager.InfoHashHex = infoHash
 	peerManager.InfoHashByte = InfoHashByte
 	peerManager.msgReceiver = msgReceiver
-	peerManager.PeerOperationReceiver = make(chan PeerOperation)
+	peerManager.PeerOperationReceiver = make(chan protocol.Operation)
 	peerManager.activePeers = make(map[string]*Peer)
 	return peerManager
 }
@@ -303,7 +303,7 @@ func (manager *peerManager) receiveOperation(ctx context.Context) {
 			return
 		case operation := <-manager.PeerOperationReceiver:
 			log.Printf("new operation received: %v", reflect.TypeOf(operation))
-			operation.execute(ctx)
+			operation.Execute(ctx)
 		}
 	}
 

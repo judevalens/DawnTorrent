@@ -2,9 +2,11 @@ package app
 
 import (
 	"DawnTorrent/parser"
+	"DawnTorrent/protocol"
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"math"
 	"strconv"
 	"sync"
@@ -14,7 +16,6 @@ const (
 	SingleFile   = iota
 	MultipleFile = iota
 )
-
 
 type Torrent struct {
 	AnnouncerUrl   string
@@ -35,7 +36,8 @@ type Torrent struct {
 	InfoHash       string
 	pieceLength    int
 	Name           string
-	pieces []*Piece
+	pieces         []*Piece
+	bitfield 	[]byte
 }
 
 type fileMetadata struct {
@@ -51,64 +53,78 @@ func createNewTorrent(torrentPath string) (*Torrent, error) {
 	if err != nil {
 		return nil, err
 	}
-	torrentFile := new(Torrent)
+	torrent := new(Torrent)
 
 	infoHashByte, hexInfoHash := GetInfoHash(torrentMap)
 
-	torrentFile.infoHashByte = infoHashByte
-	torrentFile.InfoHashHex = hexInfoHash
-	torrentFile.InfoHash = string(torrentFile.infoHashByte[:])
-	torrentFile.AnnouncerUrl = torrentMap.Strings["announce"]
-	torrentFile.AnnounceList = make([]string, len(torrentMap.BLists["announce-list"].BLists))
+	torrent.infoHashByte = infoHashByte
+	torrent.InfoHashHex = hexInfoHash
+	torrent.InfoHash = string(torrent.infoHashByte[:])
+	torrent.AnnouncerUrl = torrentMap.Strings["announce"]
+	torrent.AnnounceList = make([]string, len(torrentMap.BLists["announce-list"].BLists))
 
 	for i, announcerUrl := range torrentMap.BLists["announce-list"].BLists {
 		fmt.Printf("url : %v\n", announcerUrl.Strings)
 		if len(announcerUrl.Strings) > 0 {
-			torrentFile.AnnounceList[i] = announcerUrl.Strings[0]
+			torrent.AnnounceList[i] = announcerUrl.Strings[0]
 		}
 	}
 
-	torrentFile.CreationDate = torrentMap.Strings["creation date"]
-	torrentFile.Encoding = torrentMap.Strings["encoding"]
-	torrentFile.FileLength, _ = strconv.Atoi(torrentMap.BMaps["info"].Strings["length"])
-	torrentFile.piecesHash = torrentMap.BMaps["info"].Strings["pieces"]
-	torrentFile.pieceLength, _ = strconv.Atoi(torrentMap.BMaps["info"].Strings["piece length"])
+	torrent.CreationDate = torrentMap.Strings["creation date"]
+	torrent.Encoding = torrentMap.Strings["encoding"]
+	torrent.FileLength, _ = strconv.Atoi(torrentMap.BMaps["info"].Strings["length"])
+	torrent.piecesHash = torrentMap.BMaps["info"].Strings["pieces"]
+	torrent.pieceLength, _ = strconv.Atoi(torrentMap.BMaps["info"].Strings["piece length"])
+	torrent.Name = torrentMap.BMaps["info"].Strings["name"]
+	torrent.buildFileMetadata(torrentMap)
+	torrent.buildPieces()
+	// initializing bitfield
+	bitfieldLen := int(math.Ceil(float64(torrent.nPiece) / 8))
 
+	log.Printf("bitfield len %v",bitfieldLen)
+	torrent.bitfield = make([]byte,bitfieldLen)
+
+
+	return torrent, nil
+}
+
+func(torrent *Torrent) buildFileMetadata(torrentMap *parser.BMap)  {
 	_, isMultipleFiles := torrentMap.BMaps["info"].BLists["files"]
 	var fileProperties []fileMetadata
-	torrentFile.Name = torrentMap.BMaps["info"].Strings["name"]
-	totalLength := 0
 
 	if isMultipleFiles {
-		torrentFile.FileMode = MultipleFile
+		torrent.FileMode = MultipleFile
 		for fileIndex, v := range torrentMap.BMaps["info"].BLists["files"].BMaps {
 			filePath := v.BLists["path"].Strings[0]
 			fileLength, _ := strconv.Atoi(v.Strings["length"])
-			totalLength += fileLength
+			torrent.FileLength += fileLength
 			newFile := createFileProperties(fileProperties, filePath, fileLength, fileIndex)
 			fileProperties = append(fileProperties, newFile)
 		}
 	} else {
-		torrentFile.FileMode = SingleFile
+		torrent.FileMode = SingleFile
 		filePath := torrentMap.BMaps["info"].Strings["name"]
 		fileLength, _ := strconv.Atoi(torrentMap.BMaps["info"].Strings["length"])
-		totalLength += fileLength
+		torrent.FileLength += fileLength
 		fileProperties = []fileMetadata{createFileProperties(fileProperties, filePath, fileLength, 0)}
 	}
-	torrentFile.buildPieces()
 
-	return torrentFile, nil
+	torrent.FilesMetadata = fileProperties
 }
 
-func (torrent *Torrent) buildPieces()  {
-	for i,_ := range torrent.pieces {
+func (torrent *Torrent) buildPieces() {
+	torrent.nPiece = int(math.Ceil(float64(torrent.FileLength) / float64(torrent.pieceLength)))
 
+	log.Printf("file length %v, pieceLength %v, n pieces %v", torrent.FileLength,torrent.pieceLength, torrent.nPiece)
+
+	torrent.pieces = make([]*Piece,torrent.nPiece)
+	for i, _ := range torrent.pieces {
 		pieceLen := torrent.pieceLength
 
-		startIndex := i*torrent.pieceLength
-		currentTotalLength := startIndex+pieceLen
+		startIndex := i * torrent.pieceLength
+		currentTotalLength := startIndex + pieceLen
 
-		if currentTotalLength > torrent.FileLength{
+		if currentTotalLength > torrent.FileLength {
 			pieceLen = currentTotalLength % torrent.FileLength
 		}
 
@@ -116,6 +132,7 @@ func (torrent *Torrent) buildPieces()  {
 	}
 
 }
+
 
 // store the path , len , start and end index of file
 func createFileProperties(fileProperties []fileMetadata, filePath string, fileLength int, fileIndex int) fileMetadata {
@@ -160,34 +177,35 @@ func GetInfoHash(dict *parser.BMap) ([20]byte, string) {
 }
 
 type Piece struct {
-	pieceLength     int
-	CurrentLen      int
-	SubPieceLen     int
-	PieceIndex      int
-	State           int
-	Pieces          []byte
-	QueueIndex      int
-	Availability    int
-	subPieceMask    []byte
-	pieceStartIndex int
-	pieceEndIndex   int
+	pieceLength         int
+	CurrentLen          int
+	SubPieceLen         int
+	PieceIndex          int
+	State               int
+	Pieces              []byte
+	QueueIndex          int
+	Availability        int
+	subPieceMask        []byte
+	pieceStartIndex     int
+	pieceEndIndex       int
 	position            []int
 	pendingRequestMutex *sync.RWMutex
-
-	nSubPiece         int
-	AvailabilityIndex int
+	owners              map[string]bool
+	mask                int
+	nSubPiece           int
+	AvailabilityIndex   int
 }
 
-func (piece Piece) getSubPieceLength(index int) (int,int,bool) {
+func (piece Piece) getSubPieceLength(index int) (int, int, bool) {
 
-	startIndex := piece.CurrentLen+(subPieceLen*(index))
-	currentTotalLength := piece.CurrentLen+(subPieceLen*(index + 1))
+	startIndex := piece.CurrentLen + (subPieceLen * (index))
+	currentTotalLength := piece.CurrentLen + (subPieceLen * (index + 1))
 
-	if currentTotalLength > piece.pieceLength{
-		return  startIndex,currentTotalLength % piece.pieceLength,true
+	if currentTotalLength > piece.pieceLength {
+		return startIndex, currentTotalLength % piece.pieceLength, true
 	}
 
-	return  startIndex,subPieceLen,false
+	return startIndex, subPieceLen, false
 }
 
 func (piece Piece) getNextRequest(nRequest int) []*pieceRequest {
@@ -202,29 +220,52 @@ func (piece Piece) getNextRequest(nRequest int) []*pieceRequest {
 
 		msgLength := requestMsgLen + currentSubPieceLength
 
-
 		msg := RequestMsg{
-			torrentMsg : header{
+			torrentMsg: header{
 				RequestMsgId,
 				msgLength,
 				nil,
 			},
-			PieceIndex: piece.PieceIndex,
-			BeginIndex: startIndex,
+			PieceIndex:  piece.PieceIndex,
+			BeginIndex:  startIndex,
 			BlockLength: currentSubPieceLength,
 		}
 
 		req := &pieceRequest{
 			fullFilled: false,
-			RequestMsg:msg,
-			providers: make([]*Peer,0),
+			RequestMsg: msg,
+			providers:  make([]*Peer, 0),
 		}
 
-		requests = append(requests,req)
+		requests = append(requests, req)
 
 	}
 
 	return requests
+}
+
+
+//	Increments a piece availability is a peer a possesses it, decrements it if the peer is choking or has disconnected
+func (piece Piece)  updateAvailability(action int,peer protocol.PeerI){
+	peer.GetMutex().Lock()
+	if action == 1 {
+		if peer.HasPiece(piece.PieceIndex){
+			piece.Availability++
+			piece.owners[peer.GetId()] = true
+
+			log.Printf("peer has piece # %v\n",piece.PieceIndex)
+		}else{
+			log.Printf("peer doesnt have piece # %v\n",piece.PieceIndex)
+		}
+	}else{
+		if peer.HasPiece(piece.PieceIndex){
+			piece.Availability--
+			delete(piece.owners,peer.GetId())
+
+		}
+	}
+	peer.GetMutex().Unlock()
+
 }
 
 //	Creates a Piece object and initialize subPieceRequest for this piece
@@ -238,29 +279,9 @@ func NewPiece(downloader *Torrent, PieceIndex, pieceLength int, status int) *Pie
 	newPiece.PieceIndex = PieceIndex
 	newPiece.pieceStartIndex = PieceIndex * downloader.pieceLength
 	newPiece.pieceEndIndex = newPiece.pieceStartIndex + newPiece.pieceLength
-	newPiece.nSubPiece = int(math.Ceil(float64(pieceLength) / float64(downloader.subPieceLength)))
-	//newPiece.Pieces = make([]byte, newPiece.pieceLength)
 	newPiece.State = status
-	newPiece.subPieceMask = make([]byte, int(math.Ceil(float64(newPiece.nSubPiece)/float64(8))))
-	newPiece.pendingRequestMutex = new(sync.RWMutex)
-
-	for i := 0; i < newPiece.nSubPiece; i++ {
-		newPiece.SubPieceLen = downloader.subPieceLength
-		if i == newPiece.nSubPiece-1 {
-			if newPiece.pieceLength%downloader.subPieceLength != 0 {
-				newPiece.SubPieceLen = newPiece.pieceLength % downloader.subPieceLength
-				println("newPiece.SubPieceLen")
-				println(newPiece.SubPieceLen)
-				fmt.Printf("pieceLen %v\n", newPiece.pieceLength)
-
-				if newPiece.pieceLength != 1048576 {
-
-				}
-			}
-		}
-	}
+	newPiece.owners = make(map[string]bool)
 
 	return newPiece
 
 }
-

@@ -28,8 +28,6 @@ const (
 	requestTimeOut = time.Second*2
 )
 
-
-
 type downloaderState interface {
 }
 
@@ -119,9 +117,6 @@ func (downloader *torrentDownloader) download(ctx context.Context) {
 		log.Fatal(err)
 	}
 
-
-
-
 	// resend requests that had timed out
 	availablePeer , err := 	downloader.peerManager.getAvailablePeer()
 
@@ -153,9 +148,6 @@ func (downloader *torrentDownloader) download(ctx context.Context) {
 	}
 
 }
-
-
-
 
 
 func  (downloader *torrentDownloader) sendRequest(peer *Peer,pieceRequest ...*pieceRequest){

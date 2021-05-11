@@ -2,6 +2,7 @@ package app
 
 import (
 	"DawnTorrent/parser"
+	"DawnTorrent/utils"
 	"bytes"
 	"context"
 	"encoding/binary"
@@ -10,6 +11,7 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -34,6 +36,11 @@ type Peer struct {
 	isFree                          bool
 	pendingRequest 					[]pieceRequest
 	bitfield						[]byte
+	mutex 		*sync.Mutex
+}
+
+func (peer *Peer) GetMutex() *sync.Mutex {
+	return peer.mutex
 }
 
 func (peer *Peer) GetBitfield() []byte {
@@ -118,17 +125,16 @@ func (peer *Peer) receive(context context.Context, msgChan chan torrentMsg) erro
 	return err
 }
 
-func  (peer *Peer) hasPiece(pieceIndex int)bool{
+func  (peer *Peer) HasPiece(pieceIndex int)bool{
 
-	index := pieceIndex/8
+	byteIndex := pieceIndex/8
 
-	if index < len(peer.bitfield){
-		return false
-	}
+	bitIndex := 7 - (pieceIndex % 8)
 
-	currentByte := peer.bitfield[index]
 
-	return currentByte == 255
+
+	return  utils.IsBitOn(peer.bitfield[byteIndex],bitIndex)
+
 }
 
 func  NewPeer(ip, port, id string) *Peer {
@@ -141,6 +147,7 @@ func  NewPeer(ip, port, id string) *Peer {
 	newPeer.chocked = true
 	newPeer.interested = false
 	newPeer.isFree = true
+	newPeer.mutex = new(sync.Mutex)
 	return newPeer
 }
 func  NewPeerFromBytes(peerData []byte) *Peer {
