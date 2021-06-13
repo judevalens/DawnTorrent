@@ -2,15 +2,10 @@ package app
 
 import (
 	"DawnTorrent/parser"
-	"DawnTorrent/protocol"
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
-	"log"
-	"math"
 	"strconv"
-	"sync"
-	"sync/atomic"
 )
 
 const (
@@ -32,13 +27,12 @@ type Torrent struct {
 	FileLength     int
 	subPieceLength int
 	nSubPiece      int
-	infoHashByte   [20]byte
+	InfoHashByte   [20]byte
 	InfoHashHex    string
 	InfoHash       string
 	pieceLength    int
 	Name           string
-	pieces         []*Piece
-	bitfield 	[]byte
+	bitfield       []byte
 }
 
 type fileMetadata struct {
@@ -49,7 +43,7 @@ type fileMetadata struct {
 	EndIndex   int
 }
 
-func createNewTorrent(torrentPath string) (*Torrent, error) {
+func CreateNewTorrent(torrentPath string) (*Torrent, error) {
 	torrentMap, err := parser.Unmarshall(torrentPath)
 	if err != nil {
 		return nil, err
@@ -58,9 +52,9 @@ func createNewTorrent(torrentPath string) (*Torrent, error) {
 
 	infoHashByte, hexInfoHash := GetInfoHash(torrentMap)
 
-	torrent.infoHashByte = infoHashByte
+	torrent.InfoHashByte = infoHashByte
 	torrent.InfoHashHex = hexInfoHash
-	torrent.InfoHash = string(torrent.infoHashByte[:])
+	torrent.InfoHash = string(torrent.InfoHashByte[:])
 	torrent.AnnouncerUrl = torrentMap.Strings["announce"]
 	torrent.AnnounceList = make([]string, len(torrentMap.BLists["announce-list"].BLists))
 
@@ -78,12 +72,7 @@ func createNewTorrent(torrentPath string) (*Torrent, error) {
 	torrent.pieceLength, _ = strconv.Atoi(torrentMap.BMaps["info"].Strings["piece length"])
 	torrent.Name = torrentMap.BMaps["info"].Strings["name"]
 	torrent.buildFileMetadata(torrentMap)
-	torrent.buildPieces()
 	// initializing bitfield
-	bitfieldLen := int(math.Ceil(float64(torrent.nPiece) / 8))
-
-	log.Printf("bitfield len %v",bitfieldLen)
-	torrent.bitfield = make([]byte,bitfieldLen)
 
 
 	return torrent, nil
@@ -111,27 +100,6 @@ func(torrent *Torrent) buildFileMetadata(torrentMap *parser.BMap)  {
 	}
 
 	torrent.FilesMetadata = fileProperties
-}
-
-func (torrent *Torrent) buildPieces() {
-	torrent.nPiece = int(math.Ceil(float64(torrent.FileLength) / float64(torrent.pieceLength)))
-
-	log.Printf("file length %v, pieceLength %v, n pieces %v", torrent.FileLength,torrent.pieceLength, torrent.nPiece)
-
-	torrent.pieces = make([]*Piece,torrent.nPiece)
-	for i, _ := range torrent.pieces {
-		pieceLen := torrent.pieceLength
-
-		startIndex := i * torrent.pieceLength
-		currentTotalLength := startIndex + pieceLen
-
-		if currentTotalLength > torrent.FileLength {
-			pieceLen = currentTotalLength % torrent.FileLength
-		}
-
-		torrent.pieces[i] = NewPiece(torrent, i, pieceLen, notStarted)
-	}
-
 }
 
 
@@ -177,115 +145,10 @@ func GetInfoHash(dict *parser.BMap) ([20]byte, string) {
 
 }
 
-type Piece struct {
-	pieceLength         int
-	CurrentLen          int
-	SubPieceLen         int
-	PieceIndex          int
-	State               int
-	Pieces              []byte
-	QueueIndex          int
-	Availability        int64
-	subPieceMask        []byte
-	pieceStartIndex     int
-	pieceEndIndex       int
-	position            []int
-	mutex				*sync.Mutex
-	owners              map[string]bool
-	mask                int
-	nSubPiece           int
-	AvailabilityIndex   int
-}
 
-func (piece Piece) getSubPieceLength(index int) (int, int, bool) {
+func getRequestId(pieceIndex,startIndex int) string  {
+	pieceIndex2 := strconv.Itoa(pieceIndex)
+	startIndex2 := strconv.Itoa(startIndex)
 
-	startIndex := piece.CurrentLen + (subPieceLen * (index))
-	currentTotalLength := piece.CurrentLen + (subPieceLen * (index + 1))
-
-	if currentTotalLength > piece.pieceLength {
-		return startIndex, currentTotalLength % piece.pieceLength, true
-	}
-
-	return startIndex, subPieceLen, false
-}
-
-func (piece Piece) getNextRequest(nRequest int) []*pieceRequest {
-	var requests []*pieceRequest
-
-	for i := 0; i < nRequest; i++ {
-		startIndex, currentSubPieceLength, endOfPiece := piece.getSubPieceLength(i)
-
-		if endOfPiece {
-			return requests
-		}
-
-		msgLength := requestMsgLen + currentSubPieceLength
-
-		msg := RequestMsg{
-			torrentMsg: header{
-				RequestMsgId,
-				msgLength,
-				nil,
-			},
-			PieceIndex:  piece.PieceIndex,
-			BeginIndex:  startIndex,
-			BlockLength: currentSubPieceLength,
-		}
-
-		req := &pieceRequest{
-			fullFilled: false,
-			RequestMsg: msg,
-			providers:  make([]*Peer, 0),
-		}
-
-		requests = append(requests, req)
-
-	}
-
-	return requests
-}
-
-
-//	Increments a piece availability is a peer a possesses it, decrements it if the peer is choking or has disconnected
-func (piece Piece)  updateAvailability(action int,peer protocol.PeerI){
-	piece.mutex.Lock()
-	peer.GetMutex().Lock()
-	if action == 1 {
-		if peer.HasPiece(piece.PieceIndex){
-			atomic.AddInt64(&piece.Availability,1)
-			piece.owners[peer.GetId()] = true
-
-			log.Printf("peer has piece # %v\n",piece.PieceIndex)
-		}else{
-			log.Printf("peer doesnt have piece # %v\n",piece.PieceIndex)
-		}
-	}else{
-		if peer.HasPiece(piece.PieceIndex){
-			atomic.AddInt64(&piece.Availability,-1)
-			delete(piece.owners,peer.GetId())
-
-		}
-	}
-	peer.GetMutex().Unlock()
-	piece.mutex.Unlock()
-
-}
-
-//	Creates a Piece object and initialize subPieceRequest for this piece
-
-func NewPiece(downloader *Torrent, PieceIndex, pieceLength int, status int) *Piece {
-	newPiece := new(Piece)
-
-	newPiece.pieceLength = pieceLength
-
-	newPiece.Availability = 0
-	newPiece.PieceIndex = PieceIndex
-	newPiece.pieceStartIndex = PieceIndex * downloader.pieceLength
-	newPiece.pieceEndIndex = newPiece.pieceStartIndex + newPiece.pieceLength
-	newPiece.State = status
-	newPiece.owners = make(map[string]bool)
-	newPiece.mutex = new(sync.Mutex)
-
-	return newPiece
-
+	return pieceIndex2+"-"+startIndex2
 }

@@ -2,14 +2,17 @@ package app
 
 import (
 	"DawnTorrent/app/tracker"
-	"DawnTorrent/protocol"
+	"DawnTorrent/interfaces"
 	"context"
 	"log"
 	"reflect"
 	"sync"
 )
 
-
+const (
+	incrementAvailability = iota
+	decrementAvailability = iota
+)
 
 type torrentManagerStateI interface {
 	start()
@@ -20,9 +23,9 @@ type torrentManagerStateI interface {
 
 type TorrentManager struct {
 	Torrent         *Torrent
-	PeerManager     *peerManager
+	PeerManager     *PeerManager
 	stopMsgPipeLine chan interface{}
-	MsgChan         chan torrentMsg
+	MsgChan         chan TorrentMsg
 	torrentState    int
 	Uploaded        int
 	TotalDownloaded int
@@ -32,7 +35,13 @@ type TorrentManager struct {
 	scrapper        *tracker.Announcer
 	state           int
 	myState         torrentManagerStateI
-	downloader torrentDownloader
+	downloader      *Downloader
+	SyncOperation   chan interfaces.SyncOp
+
+}
+
+func (manager *TorrentManager) GetSyncChan() chan interfaces.SyncOp {
+	panic("implement me")
 }
 
 func (manager *TorrentManager) GetAnnounceList() []string {
@@ -46,9 +55,11 @@ func (manager *TorrentManager) GetStats() (int, int, int) {
 
 func NewTorrentManager(torrentPath string) *TorrentManager {
 	manager := new(TorrentManager)
-	manager.Torrent, _ = createNewTorrent(torrentPath)
-	manager.MsgChan = make(chan torrentMsg)
-	manager.PeerManager = newPeerManager(manager.MsgChan, manager.Torrent.InfoHashHex,manager.Torrent.infoHashByte[:])
+	manager.Torrent, _ = CreateNewTorrent(torrentPath)
+	manager.MsgChan = make(chan TorrentMsg)
+	manager.SyncOperation = make(chan interfaces.SyncOp)
+	manager.PeerManager = newPeerManager(manager.MsgChan, manager.Torrent.InfoHashHex,manager.Torrent.InfoHashByte[:])
+	manager.downloader = NewTorrentDownloader(manager.Torrent,manager,manager.PeerManager)
 	newScrapper, err := tracker.NewAnnouncer(manager.Torrent.AnnouncerUrl, manager.Torrent.InfoHash,manager,manager.PeerManager)
 
 	if err != nil{
@@ -57,10 +68,11 @@ func NewTorrentManager(torrentPath string) *TorrentManager {
 
 	manager.scrapper = newScrapper
 
-	manager.torrentState = protocol.StopTorrent
+	manager.torrentState = interfaces.StopTorrent
 	manager.myState = &StoppedStated{manager: manager}
 
 	manager.stateChan = make(chan int, 1)
+
 	return manager
 }
 
@@ -70,7 +82,7 @@ type startedStated struct {
 }
 
 func (state startedStated) getState() int {
-	return protocol.CompleteTorrent
+	return interfaces.CompleteTorrent
 }
 
 func (state startedStated) start() {
@@ -92,7 +104,7 @@ type StoppedStated struct {
 }
 
 func (state StoppedStated) getState() int {
-	return protocol.StopTorrent
+	return interfaces.StopTorrent
 }
 
 func (state StoppedStated) start() {
@@ -100,9 +112,10 @@ func (state StoppedStated) start() {
 	ctx, cancelRoutine := context.WithCancel(context.TODO())
 
 	go state.manager.msgRouter(ctx)
+	go state.manager.receiveOperation(ctx)
 	go state.manager.PeerManager.receiveOperation(ctx)
 	go state.manager.scrapper.StartScrapper(ctx)
-
+	go state.manager.downloader.Start(ctx)
 	state.manager.myState = &startedStated{manager: state.manager,cancelRoutines: cancelRoutine}
 
 	state.manager.PeerManager.PeerOperationReceiver <- startServer{
@@ -128,16 +141,15 @@ func (manager *TorrentManager) GetState() int{
 }
 
 func (manager *TorrentManager) Init() {
-
 	for {
 		manager.state = <-manager.stateChan
 		log.Printf("new state : %v", manager.state)
 		switch manager.state {
-		case protocol.StartTorrent:
+		case interfaces.StartTorrent:
 			manager.myState.start()
-		case protocol.StopTorrent:
+		case interfaces.StopTorrent:
 			manager.myState.stop()
-		case protocol.CompleteTorrent:
+		case interfaces.CompleteTorrent:
 			close(manager.stateChan)
 		}
 	}
@@ -148,9 +160,6 @@ func (manager TorrentManager) Stop() {
 	close(manager.stateChan)
 }
 
-func (manager *TorrentManager) runPeriodicDownloader() {
-
-}
 func (manager *TorrentManager) msgRouter(ctx context.Context) {
 
 	for {
@@ -159,44 +168,23 @@ func (manager *TorrentManager) msgRouter(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case msg := <-manager.MsgChan:
-			log.Printf("routing msg...: %v", msg)
+			log.Printf("routing msg..., msgID : %v", msg.getId())
 			msg.handleMsg(manager)
 		}
 
 	}
 }
 
-func (manager *TorrentManager) handleUnInterestedMsg(msg UnInterestedMsg) {
-}
+func (manager *TorrentManager) receiveOperation(ctx context.Context) {
 
-func (manager *TorrentManager) handleInterestedMsg(msg InterestedMsg) {
-}
+	for {
 
-func (manager *TorrentManager) handleUnChokeMsg(msg UnChockedMsg) {
-}
-func (manager *TorrentManager) handleChokeMsg(msg ChockedMSg) {
-}
+		select {
+		case <-ctx.Done():
+			return
+		case operation := <-manager.SyncOperation:
+			operation()
+		}
 
-func (manager *TorrentManager) handleHaveMsg(msg HaveMsg) {
-}
-
-func (manager *TorrentManager) handleBitFieldMsg(msg BitfieldMsg) {
-
-	peer := msg.getPeer()
-	peer.SetBitField(msg.Bitfield)
-
-	for _,piece := range manager.Torrent.pieces{
-		piece.updateAvailability(1,peer)
-		manager.downloader.updatePiecePriority(piece.QueueIndex)
 	}
-
-}
-
-func (manager *TorrentManager) handlePieceMsg(msg PieceMsg) {
-}
-
-func (manager *TorrentManager) handleRequestMsg(msg RequestMsg) {
-}
-
-func (manager *TorrentManager) handleCancelMsg(msg CancelRequestMsg) {
 }

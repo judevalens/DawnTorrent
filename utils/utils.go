@@ -42,6 +42,13 @@ var TorrentHomeDir = filepath.FromSlash(homeDir + "/DawnTorrent/files")
 
 var SavedTorrentDir = filepath.FromSlash(homeDir + "/DawnTorrent/torrents")
 
+func InitDir()  {
+	if _, err := os.Stat(TorrentHomeDir); os.IsNotExist(err) {
+		_ = os.MkdirAll(TorrentHomeDir, os.ModePerm)
+		_ = os.MkdirAll(SavedTorrentDir, os.ModePerm)
+	}
+}
+
 func GetRandomId(s int) string {
 
 
@@ -109,7 +116,7 @@ func LocalAddress() net.IP {
 
 // 	BitMask maks a bit at given position
 //	1 turns bit on | 0 turns bit off
-func BitMask(b uint8, bits []int, action int) uint8 {
+func BitMask(b uint8, action int, bits ...int) uint8 {
 
 	if action == 1 {
 		for _, v := range bits {
@@ -133,6 +140,7 @@ func IsBitOn(b uint8, pos int) bool {
 
 	return a != 0
 }
+
 func flipBit(b uint8) uint8 {
 	a := uint8(255)
 	a = a &^ b

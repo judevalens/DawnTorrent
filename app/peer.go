@@ -3,27 +3,23 @@ package app
 import (
 	"DawnTorrent/parser"
 	"DawnTorrent/utils"
-	"bytes"
-	"context"
 	"encoding/binary"
-	"io"
 	"log"
 	"net"
-	"os"
 	"strconv"
 	"sync"
 	"time"
 )
-
-
 
 type Peer struct {
 	ip                              string
 	port                            string
 	id                              string
 	peerIndex                       int
-	peerIsChocking                  bool
-	peerIsInteresting               bool
+	isInteresting                   bool
+	isChoked                        bool
+	isChocking                      bool
+	isInterested                    bool
 	chocked                         bool
 	interested                      bool
 	AvailablePieces                 []bool
@@ -34,9 +30,43 @@ type Peer struct {
 	connection                      *net.TCPConn
 	lastPeerPendingRequestTimeStamp time.Time
 	isFree                          bool
-	pendingRequest 					[]pieceRequest
-	bitfield						[]byte
-	mutex 		*sync.Mutex
+	PendingRequest                  map[string]*BlockRequest
+	bitfield                        []byte
+	mutex                           *sync.Mutex
+}
+
+func (peer *Peer) GetPendingRequest() map[string]*BlockRequest {
+	panic("implement me")
+}
+
+func (peer *Peer) isAvailable(pieceIndex int) bool {
+	return true
+}
+
+func (peer *Peer) resolveRequest() {
+
+}
+
+func (peer *Peer) UpdateBitfield(pieceIndex int) {
+	byteIndex := pieceIndex / 8
+	bitIndex := 7 - byteIndex%8
+	peer.bitfield[byteIndex] = utils.BitMask(peer.bitfield[byteIndex], 1, bitIndex)
+}
+
+func (peer *Peer) SetInterest(x bool) {
+	peer.isInterested = x
+}
+
+func (peer *Peer) IsChoking() bool {
+	return peer.isChocking
+}
+
+func (peer *Peer) SetChoke(x bool) {
+	peer.isChocking = x
+}
+
+func (peer *Peer) IsInterested() bool {
+	return peer.isInterested
 }
 
 func (peer *Peer) GetMutex() *sync.Mutex {
@@ -71,76 +101,26 @@ func (peer *Peer) GetConnection() *net.TCPConn {
 	return peer.connection
 }
 
-func (peer *Peer) isAvailable(pieceIndex int)  {
-
-}
-
-
-func (peer *Peer) sendMsg(msg []byte)(int,error){
+func (peer *Peer) SendMsg(msg []byte) (int, error) {
 	return peer.connection.Write(msg)
 }
 
+func (peer *Peer) HasPiece(pieceIndex int) bool {
 
-func (peer *Peer) stopReceiving(context context.Context){
-	<- context.Done()
-
-	err := peer.connection.Close()
-	if err != nil {
-		return
-	}
-}
-
-func (peer *Peer) receive(context context.Context, msgChan chan torrentMsg) error {
-
-	go peer.stopReceiving(context)
-
-	var err error
-	msgLenBuffer := make([]byte, 4)
-	for  {
-
-			//reads the length of the incoming msg
-			_, err = io.ReadFull(peer.connection, msgLenBuffer)
-
-			msgLen := int(binary.BigEndian.Uint32(msgLenBuffer[0:4]))
-
-			// reads the full payload
-			incomingMsgBuffer := make([]byte, msgLen)
-			_, err = io.ReadFull(peer.connection, incomingMsgBuffer)
-			if err != nil{
-				log.Fatal(err)
-			}
-			msg, err := ParseMsg(bytes.Join([][]byte{msgLenBuffer, incomingMsgBuffer}, []byte{}), peer)
-
-			log.Printf("received new msg from : %v, \n %v",peer.connection.RemoteAddr().String(), msg)
-
-			if err != nil {
-			os.Exit(23)
-		}
-
-		msgChan <- msg
-		
-
-	}
-
-	return err
-}
-
-func  (peer *Peer) HasPiece(pieceIndex int)bool{
-
-	byteIndex := pieceIndex/8
+	byteIndex := pieceIndex / 8
 
 	bitIndex := 7 - (pieceIndex % 8)
 
-	return  utils.IsBitOn(peer.bitfield[byteIndex],bitIndex)
+	return utils.IsBitOn(peer.bitfield[byteIndex], bitIndex)
 
 }
 
-func  NewPeer(ip, port, id string) *Peer {
+func NewPeer(ip, port, id string) *Peer {
 	newPeer := new(Peer)
-	newPeer.id =id
+	newPeer.id = id
 	newPeer.port = port
 	newPeer.ip = ip
-	newPeer.peerIsChocking = true
+	newPeer.isChocking = true
 	newPeer.interested = false
 	newPeer.chocked = true
 	newPeer.interested = false
@@ -148,7 +128,7 @@ func  NewPeer(ip, port, id string) *Peer {
 	newPeer.mutex = new(sync.Mutex)
 	return newPeer
 }
-func  NewPeerFromBytes(peerData []byte) *Peer {
+func NewPeerFromBytes(peerData []byte) *Peer {
 
 	ipByte := peerData[0:4]
 
@@ -172,10 +152,10 @@ func  NewPeerFromBytes(peerData []byte) *Peer {
 	portBytes := binary.BigEndian.Uint16(peerData[4:6])
 	port := strconv.FormatUint(uint64(portBytes), 10)
 
-	log.Printf("peer addr: %v\n", ipString + ":" + port)
+	log.Printf("peer addr: %v\n", ipString+":"+port)
 
-	return NewPeer(ipString,strconv.FormatUint(uint64(portBytes), 10),ipString + ":" + port)
+	return NewPeer(ipString, strconv.FormatUint(uint64(portBytes), 10), ipString+":"+port)
 }
-func NewPeerFromMap(peerData *parser.BMap) *Peer{
-	return NewPeer(peerData.Strings["ip"], peerData.Strings["port"],peerData.Strings["peer id"])
+func NewPeerFromMap(peerData *parser.BMap) *Peer {
+	return NewPeer(peerData.Strings["ip"], peerData.Strings["port"], peerData.Strings["peer id"])
 }

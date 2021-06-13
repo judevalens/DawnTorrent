@@ -496,7 +496,7 @@ func (downloader *TorrentDownloader) fileAssembler() {
 				msg.Peer.mutex.Unlock()
 			}
 			isEmpty := utils.IsBitOn(currentPiece.subPieceMask[subPieceBitMaskIndex], subPieceBitIndex) == false
-			currentPiece.subPieceMask[subPieceBitMaskIndex] = utils.BitMask(currentPiece.subPieceMask[subPieceBitMaskIndex], []int{subPieceBitIndex}, 1)
+			currentPiece.subPieceMask[subPieceBitMaskIndex] = utils.BitMask(currentPiece.subPieceMask[subPieceBitMaskIndex], 1, []int{subPieceBitIndex}, 1)
 
 			// if we haven't already receive this piece , we saved it
 			if isEmpty {
@@ -537,7 +537,7 @@ func (downloader *TorrentDownloader) fileAssembler() {
 				// once a piece is complete we write the it to downloader
 				if isPieceComplete {
 					var errWritingPiece error
-					fmt.Printf(" currentPiece.pieceLength %v, currentPiece.CurrentLen %v\n", currentPiece.Len, currentPiece.CurrentLen)
+					fmt.Printf(" currentPiece.pieceLength %v, currentPiece.downloaded %v\n", currentPiece.Len, currentPiece.CurrentLen)
 
 					if !downloader.isPieceValid(currentPiece) {
 
@@ -605,7 +605,7 @@ func (downloader *TorrentDownloader) fileAssembler() {
 
 						currentPieceBitFieldIndex := int(math.Ceil(float64(currentPiece.PieceIndex / 8)))
 						currentPieceBitFieldBitIndex := currentPiece.PieceIndex % 8
-						downloader.Bitfield[currentPieceBitFieldIndex] = utils.BitMask(downloader.Bitfield[currentPieceBitFieldIndex], []int{currentPieceBitFieldBitIndex}, 1)
+						downloader.Bitfield[currentPieceBitFieldIndex] = utils.BitMask(downloader.Bitfield[currentPieceBitFieldIndex], 1, []int{currentPieceBitFieldBitIndex}, 1)
 						fmt.Printf("%v", downloader.Bitfield)
 
 						downloader.saveTorrent()
@@ -615,7 +615,7 @@ func (downloader *TorrentDownloader) fileAssembler() {
 					}
 
 				} else {
-					//	fmt.Printf("not complete yet , %v/%v pieceindex : %v\n",currentPiece.pieceLength,currentPiece.CurrentLen,currentPiece.PieceIndex)
+					//	fmt.Printf("not complete yet , %v/%v pieceindex : %v\n",currentPiece.pieceLength,currentPiece.downloaded,currentPiece.PieceIndex)
 					currentPiece.State = InProgressPiece
 					downloader.SelectNewPiece = false
 				}
@@ -693,7 +693,7 @@ func (downloader *TorrentDownloader) PieceRequestManager(periodic *periodicFunc)
 			downloader.SelectNewPiece = false
 		} else {
 
-			//fmt.Printf("not complete yet , currentLen %v , actual pieceLength %v\n",currentPiece.CurrentLen,currentPiece.pieceLength)
+			//fmt.Printf("not complete yet , currentLen %v , actual pieceLength %v\n",currentPiece.downloaded,currentPiece.pieceLength)
 		}
 		currentPiece := downloader.Pieces[downloader.CurrentPieceIndex]
 		if !downloader.SelectNewPiece && len(currentPiece.neededSubPiece) == 0 && len(currentPiece.pendingRequest) == 0 {

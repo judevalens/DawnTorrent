@@ -1,9 +1,9 @@
 package app
 
 import (
+	"DawnTorrent/interfaces"
 	"DawnTorrent/parser"
 	_ "DawnTorrent/parser"
-	"DawnTorrent/protocol"
 	"DawnTorrent/utils"
 	"bytes"
 	"context"
@@ -21,20 +21,33 @@ import (
 	_ "strconv"
 )
 
-type peerManager struct {
+type PeerManager struct {
 	activePeers map[string]*Peer
 	peersId []string
 
 	nActiveConnection     int
 	maxConnection         int
-	PeerOperationReceiver chan protocol.Operation
-	msgReceiver           chan torrentMsg
+	PeerOperationReceiver chan interfaces.Operation
+	msgReceiver           chan TorrentMsg
 	server                *net.TCPListener
 	InfoHashHex           string
 	InfoHashByte          []byte
 }
 
-func (manager *peerManager) HandleMsgStream(ctx context.Context, peer protocol.PeerI) error{
+func newPeerManager(msgReceiver chan TorrentMsg, infoHash string, InfoHashByte []byte) *PeerManager {
+	peerManager := new(PeerManager)
+	peerManager.InfoHashHex = infoHash
+	peerManager.InfoHashByte = InfoHashByte
+	peerManager.msgReceiver = msgReceiver
+	peerManager.PeerOperationReceiver = make(chan interfaces.Operation)
+	peerManager.activePeers = make(map[string]*Peer)
+	return peerManager
+}
+
+
+
+func (manager *PeerManager) HandleMsgStream(ctx context.Context, peer *Peer) error{
+	log.Print("connection to peer OK")
 	var err error
 	msgLenBuffer := make([]byte, 4)
 	for  {
@@ -52,7 +65,15 @@ func (manager *peerManager) HandleMsgStream(ctx context.Context, peer protocol.P
 		}
 		msg, err := ParseMsg(bytes.Join([][]byte{msgLenBuffer, incomingMsgBuffer}, []byte{}), peer)
 
-		log.Printf("received new msg from : %v, \n %v",peer.GetConnection().RemoteAddr().String(), msg)
+		if err != nil{
+			log.Printf("incorrect msg:\n,%v", bytes.Join([][]byte{msgLenBuffer, incomingMsgBuffer}, []byte{}))
+			log.Fatal(err)
+		}
+		peer.GetConnection().RemoteAddr().String()
+		print("didnt get to msg\n")
+		msg.getId()
+		print("got  to msg\n")
+		log.Printf("received new msg from : %v, \n %v",peer.GetConnection().RemoteAddr().String(), msg.getId())
 
 		if err != nil {
 			os.Exit(23)
@@ -62,15 +83,14 @@ func (manager *peerManager) HandleMsgStream(ctx context.Context, peer protocol.P
 	}
 }
 
-func (manager *peerManager) GetActivePeers() map[string]protocol.PeerI {
+func (manager *PeerManager) GetActivePeers() map[string]interfaces.PeerI {
 	panic("implement me")
 }
 
-func (manager *peerManager) AddNewPeer(peers []protocol.PeerI) {
+func (manager *PeerManager) AddNewPeer(peers ...interfaces.PeerI) {
 
 	for _, peer := range peers {
 		currentPeer := peer
-
 		go func() {
 			if currentPeer.GetConnection() == nil {
 				err := manager.connect(currentPeer)
@@ -78,7 +98,7 @@ func (manager *peerManager) AddNewPeer(peers []protocol.PeerI) {
 					return
 				}
 			}
-			err := manager.HandleMsgStream(nil,currentPeer)
+			err := manager.HandleMsgStream(nil,currentPeer.(*Peer))
 			if err != nil {
 				log.Printf("something bad happen while peer was connected\n err: %v", err)
 			}
@@ -87,21 +107,12 @@ func (manager *peerManager) AddNewPeer(peers []protocol.PeerI) {
 
 }
 
-func newPeerManager(msgReceiver chan torrentMsg, infoHash string, InfoHashByte []byte) *peerManager {
-	peerManager := new(peerManager)
-	peerManager.InfoHashHex = infoHash
-	peerManager.InfoHashByte = InfoHashByte
-	peerManager.msgReceiver = msgReceiver
-	peerManager.PeerOperationReceiver = make(chan protocol.Operation)
-	peerManager.activePeers = make(map[string]*Peer)
-	return peerManager
-}
 
-func (manager *peerManager) getAvailablePeer() (*Peer,error) {
+func (manager *PeerManager) GetAvailablePeer() (*Peer,error) {
 	return nil, nil
 }
 
-func (manager *peerManager) handleConnectionRequest(connection *net.TCPConn) {
+func (manager *PeerManager) handleConnectionRequest(connection *net.TCPConn) {
 	//var newPeer *Peer
 	var err error
 	_ = connection.SetKeepAlive(true)
@@ -131,12 +142,12 @@ func (manager *peerManager) handleConnectionRequest(connection *net.TCPConn) {
 	newPeer.connection = connection
 
 	log.Printf("incoming connection was succesful")
-
-	manager.AddNewPeer([]protocol.PeerI{newPeer})
+	os.Exit(23)
+	manager.AddNewPeer(newPeer)
 
 }
 
-func (manager *peerManager) connect(peer protocol.PeerI) error {
+func (manager *PeerManager) connect(peer interfaces.PeerI) error {
 	var err error
 	if err != nil {
 		log.Fatal(err)
@@ -158,7 +169,7 @@ func (manager *peerManager) connect(peer protocol.PeerI) error {
 
 	if err != nil {
 		log.Printf("error while sending handshake to peer %v :\n%v", peer.GetAddress().String(), err)
-
+		os.Exit(23)
 		return err
 	}
 	handshakeBytes := make([]byte, 68)
@@ -173,7 +184,7 @@ func (manager *peerManager) connect(peer protocol.PeerI) error {
 
 	if err != nil {
 		log.Fatal(err)
-		os.Exit(23)
+		os.Exit(233)
 	}
 
 	if string(handShakeMsg.infoHash) != string(manager.InfoHashByte) {
@@ -192,12 +203,11 @@ func (manager *peerManager) connect(peer protocol.PeerI) error {
 	fmt.Printf("handshake, %v\n", string(handshakeBytes))
 
 	peer.SetConnection(connection)
-
 	return nil
 }
 
-func (manager *peerManager) CreatePeersFromUDPTracker(peersAddress []byte) []protocol.PeerI {
-	var peers []protocol.PeerI
+func (manager *PeerManager) CreatePeersFromUDPTracker(peersAddress []byte) []interfaces.PeerI {
+	var peers []interfaces.PeerI
 	i := 0
 	log.Printf("peersAddress len %v",len(peersAddress))
 	for i < len(peersAddress) {
@@ -210,8 +220,8 @@ func (manager *peerManager) CreatePeersFromUDPTracker(peersAddress []byte) []pro
 	return peers
 }
 
-func (manager *peerManager) CreatePeersFromHTTPTracker(peersInfo []*parser.BMap) []protocol.PeerI {
-	var peers []protocol.PeerI
+func (manager *PeerManager) CreatePeersFromHTTPTracker(peersInfo []*parser.BMap) []interfaces.PeerI {
+	var peers []interfaces.PeerI
 	for _, peerDict := range peersInfo {
 		peer := NewPeer(peerDict.Strings["ip"], peerDict.Strings["port"], peerDict.Strings["peer id"])
 		peers = append(peers, peer)
@@ -220,7 +230,7 @@ func (manager *peerManager) CreatePeersFromHTTPTracker(peersInfo []*parser.BMap)
 	return peers
 }
 
-func (manager *peerManager) DropPeer(peer *Peer) {
+func (manager *PeerManager) DropPeer(peer *Peer) {
 	/*
 		peer.connection = nil
 		peerSwarm.activeConnection.Remove(peer.id)
@@ -245,7 +255,7 @@ func (manager *peerManager) DropPeer(peer *Peer) {
 	*/
 }
 
-func (manager *peerManager) startServer(ctx context.Context) {
+func (manager *PeerManager) startServer(ctx context.Context) {
 	go func() {
 		for {
 			<-ctx.Done()
@@ -283,7 +293,7 @@ func (manager *peerManager) startServer(ctx context.Context) {
 
 }
 
-func (manager *peerManager) stopServer() {
+func (manager *PeerManager) stopServer() {
 	if manager.server != nil {
 		err := manager.server.Close()
 		if err != nil {
@@ -293,7 +303,7 @@ func (manager *peerManager) stopServer() {
 	}
 }
 
-func (manager *peerManager) receiveOperation(ctx context.Context) {
+func (manager *PeerManager) receiveOperation(ctx context.Context) {
 	log.Printf("starting peer operation receiver")
 	for {
 

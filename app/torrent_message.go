@@ -1,11 +1,9 @@
 package app
 
 import (
-	"DawnTorrent/protocol"
 	"bytes"
-	"encoding/binary"
 	"errors"
-	"math"
+	"log"
 )
 
 const (
@@ -39,31 +37,31 @@ var (
 	maxPiece   byte
 )
 
-type torrentMsg interface {
+type TorrentMsg interface {
 	getId() int
 	handleMsg(manager *TorrentManager)
-	marshal() []byte
-	getPeer() protocol.PeerI
-
+	Marshal() []byte
+	GetPeer() *Peer
 }
 
 type header struct {
 	ID     int
 	Length int
-	peer protocol.PeerI
-}
-
-func (msg header) getPeer() protocol.PeerI {
-	return msg.peer
-}
-
-func (msg header) marshal() []byte {
-	panic("implement me")
+	peer   *Peer
 }
 
 func (msg header) handleMsg(manager *TorrentManager) {
+	log.Printf("this is a keep alive msg from: %v", msg.GetPeer().GetId())
+}
+
+func (msg header) GetPeer() *Peer {
+	return msg.peer
+}
+
+func (msg header) Marshal() []byte {
 	panic("implement me")
 }
+
 func (msg header) getId() int{
 	return msg.ID
 }
@@ -113,7 +111,7 @@ func parseHandShake(data []byte) (*HandShake, error) {
 }
 
 type HanShakeMsg struct {
-	torrentMsg
+	TorrentMsg
 }
 
 func (h HanShakeMsg) handle() {
@@ -125,186 +123,92 @@ func (h HanShakeMsg) buildMsg(data []byte) {
 }
 
 type ChockedMSg struct {
-	torrentMsg
+	TorrentMsg
 }
 
 func (msg ChockedMSg) handleMsg(manager *TorrentManager) {
-	manager.handleChokeMsg(msg)
+	manager.HandleChokeMsg(msg)
 
 }
 
 type UnChockedMsg struct {
-	torrentMsg
+	TorrentMsg
 }
 
 func (msg UnChockedMsg) handleMsg(manager *TorrentManager) {
-	manager.handleUnChokeMsg(msg)
+	manager.HandleUnChokeMsg(msg)
 
 }
 
 type InterestedMsg struct {
-	torrentMsg
+	TorrentMsg
 }
 
 func (msg InterestedMsg) handleMsg(manager *TorrentManager) {
-	manager.handleInterestedMsg(msg)
+	manager.HandleInterestedMsg(msg)
 
 }
 
 type UnInterestedMsg struct {
-	torrentMsg
+	TorrentMsg
 }
 
 func (msg UnInterestedMsg) handleMsg(manager *TorrentManager) {
-	manager.handleUnInterestedMsg(msg)
+	manager.HandleUnInterestedMsg(msg)
 
 }
 
 type HaveMsg struct {
-	torrentMsg
+	TorrentMsg
 	PieceIndex int
 }
 
 func (msg HaveMsg) handleMsg(manager *TorrentManager) {
-	manager.handleHaveMsg(msg)
+	manager.HandleHaveMsg(msg)
 
 }
 
 type BitfieldMsg struct {
-	torrentMsg
+	TorrentMsg
 	Bitfield     []byte
 	BitFieldSize int
 }
 
 func (msg BitfieldMsg) handleMsg(manager *TorrentManager) {
-	manager.handleBitFieldMsg(msg)
+	manager.HandleBitFieldMsg(msg)
 
 }
 
 type RequestMsg struct {
-	torrentMsg
+	TorrentMsg
 	PieceIndex  int
 	BeginIndex  int
 	BlockLength int
 }
 
 func (request RequestMsg) handleMsg(manager *TorrentManager) {
-	manager.handleRequestMsg(request)
+	manager.HandleRequestMsg(request)
 }
 
 type CancelRequestMsg struct {
-	torrentMsg
+	TorrentMsg
 	PieceIndex  int
 	BeginIndex  int
 	BlockLength int
 }
 
 func (msg CancelRequestMsg) handleMsg(manager *TorrentManager) {
-	manager.handleCancelMsg(msg)
+	manager.HandleCancelMsg(msg)
 }
 
 type PieceMsg struct {
-	torrentMsg
+	TorrentMsg
 	PieceIndex  int
 	BeginIndex  int
 	BlockLength int
-	block       []byte
+	Payload     []byte
 }
 
 func (msg PieceMsg) handleMsg(manager *TorrentManager) {
-	manager.handlePieceMsg(msg)
-}
-
-func parseBitfieldMsg(rawMsg []byte, baseMSg header) (BitfieldMsg, error) {
-	//TODO need to check for error
-	msg := BitfieldMsg{}
-	msg.torrentMsg = baseMSg
-	msg.BitFieldSize = int(math.Abs(float64(baseMSg.Length - defaultMsgLen)))
-	msg.Bitfield = rawMsg[5 :msg.BitFieldSize+5]
-	return msg, nil
-}
-func parseChockedMSg(data []byte, baseMSg header) (ChockedMSg, error) {
-	//TODO need to check for error
-	msg := ChockedMSg{baseMSg}
-	return msg, nil
-}
-func parseUnChockedMSg(data []byte, baseMSg header) (UnChockedMsg, error) {
-	//TODO need to check for error
-	msg := UnChockedMsg{baseMSg}
-	return msg, nil
-}
-func parseInterestedMsg(data []byte, baseMSg header) (InterestedMsg, error) {
-	//TODO need to check for error
-	msg := InterestedMsg{baseMSg}
-	return msg, nil
-}
-func parseUnInterestedMsg(data []byte, baseMSg header) (UnInterestedMsg, error) {
-	return UnInterestedMsg{baseMSg}, nil
-}
-func parseHaveMsg(rawMsg []byte, baseMSg header) (HaveMsg, error) {
-
-	msg := HaveMsg{}
-	msg.torrentMsg = baseMSg
-	msg.PieceIndex = int(binary.BigEndian.Uint32(rawMsg[5:9]))
-	return msg, nil
-}
-func parseRequestMsg(rawMsg []byte, baseMSg header) (RequestMsg, error) {
-	msg := RequestMsg{}
-	msg.torrentMsg = baseMSg
-	msg.PieceIndex = int(binary.BigEndian.Uint32(rawMsg[5:9]))
-	msg.BeginIndex = int(binary.BigEndian.Uint32(rawMsg[9:13]))
-	msg.BlockLength = int(binary.BigEndian.Uint32(rawMsg[13:17]))
-	return msg, nil
-}
-func parseCancelRequestMsg(rawMsg []byte, baseMSg header) (CancelRequestMsg, error) {
-	msg := CancelRequestMsg{}
-	msg.torrentMsg = baseMSg
-	msg.PieceIndex = int(binary.BigEndian.Uint32(rawMsg[5:9]))
-	msg.BeginIndex = int(binary.BigEndian.Uint32(rawMsg[9:13]))
-	msg.BlockLength = int(binary.BigEndian.Uint32(rawMsg[13:17]))
-	return msg, nil
-}
-func parsePieceMsg(rawMsg []byte, baseMSg header) (PieceMsg, error) {
-	msg := PieceMsg{}
-	msg.torrentMsg = baseMSg
-	msg.PieceIndex = int(binary.BigEndian.Uint32(rawMsg[5:9]))
-	msg.BeginIndex = int(binary.BigEndian.Uint32(rawMsg[9:13]))
-	msg.BlockLength = int(math.Abs(float64(baseMSg.Length - pieceMsgLen)))
-	msg.block = make([]byte, msg.BlockLength)
-
-	return msg,nil
-}
-
-func ParseMsg(msg []byte, peer protocol.PeerI) (torrentMsg, error) {
-	baseMsg := header{}
-	baseMsg.peer = peer
-	if len(msg) < 5 {
-		return nil, errors.New("msg is too short")
-	}
-	baseMsg.Length = int(binary.BigEndian.Uint32(msg[0:4]))
-	id, _ := binary.Uvarint(msg[4:5])
-	baseMsg.ID = int(id)
-
-	switch baseMsg.ID {
-	case BitfieldMsgId:
-		return parseBitfieldMsg(msg, baseMsg)
-	case RequestMsgId:
-		return parseRequestMsg(msg, baseMsg)
-	case PieceMsgId:
-		return parsePieceMsg(msg, baseMsg)
-	case HaveMsgId:
-		return parseHaveMsg(msg, baseMsg)
-	case CancelMsgId:
-		return parseCancelRequestMsg(msg, baseMsg)
-	case UnChokeMsgId:
-		return parseUnChockedMSg(msg, baseMsg)
-	case ChokeMsgId:
-		return parseChockedMSg(msg, baseMsg)
-	case InterestedMsgId:
-		return parseInterestedMsg(msg, baseMsg)
-	case UnInterestedMsgId:
-		return parseUnInterestedMsg(msg, baseMsg)
-	}
-
-	return nil, nil
+	manager.HandlePieceMsg(msg)
 }

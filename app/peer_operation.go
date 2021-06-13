@@ -11,7 +11,7 @@ import (
 
 type dropPeerOperation struct {
 	peer *Peer
-	swarm *peerManager
+	swarm *PeerManager
 }
 
 func (operation dropPeerOperation) Execute(context.Context) {
@@ -20,7 +20,7 @@ func (operation dropPeerOperation) Execute(context.Context) {
 
 type IncomingPeerConnection struct {
 	conn *net.TCPConn
-	swarm *peerManager
+	swarm *PeerManager
 }
 
 func (operation IncomingPeerConnection) Execute(context.Context) {
@@ -29,7 +29,7 @@ func (operation IncomingPeerConnection) Execute(context.Context) {
 
 type connectPeerOperation struct {
 	peer *Peer
-	swarm *peerManager
+	swarm *PeerManager
 }
 
 func (operation connectPeerOperation) Execute(context.Context) {
@@ -40,7 +40,7 @@ func (operation connectPeerOperation) Execute(context.Context) {
 }
 
 type startServer struct {
-	swarm *peerManager
+	swarm *PeerManager
 }
 
 func (operation startServer) Execute(ctx context.Context) {
@@ -48,7 +48,7 @@ func (operation startServer) Execute(ctx context.Context) {
 }
 
 type stopServer struct {
-	swarm *peerManager
+	swarm *PeerManager
 }
 
 func (operation stopServer) Execute(context.Context) {

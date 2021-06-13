@@ -1,7 +1,7 @@
 package app
 
 type peerSelector struct {
-	peerManager
+	PeerManager
 }
 
 func (selector peerSelector) getPeer() *Peer{

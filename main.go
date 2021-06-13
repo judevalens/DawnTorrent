@@ -2,7 +2,8 @@ package main
 
 import (
 	"DawnTorrent/app"
-	"DawnTorrent/protocol"
+	"DawnTorrent/interfaces"
+	"DawnTorrent/utils"
 	"bufio"
 	"fmt"
 	"log"
@@ -30,11 +31,11 @@ func main() {
 
 	//c.addTorrent("/home/jude/GolandProjects/DawnTorrent/files/ubuntu-20.04-desktop-amd64.iso.torrent",PeerProtocol.InitTorrentFile_)
 	//c.torrents["1"].Start()
-
+	utils.InitDir()
 	torrentPath := "files/cosmos-laundromat.torrent"
 	 manager1 := app.NewTorrentManager(torrentPath)
 	go manager1.Init()
-	 manager1.SetState(protocol.StartTorrent)
+	 manager1.SetState(interfaces.StartTorrent)
 	println("non blocking")
 
 	/*

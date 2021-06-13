@@ -1,7 +1,7 @@
 package tracker
 
 import (
-	"DawnTorrent/protocol"
+	"DawnTorrent/interfaces"
 	"context"
 	"errors"
 	"fmt"
@@ -25,12 +25,12 @@ type Announcer struct {
 	trackerUrls    []*url.URL
 	interval       time.Duration
 	timer          *time.Timer
-	torrentManager protocol.TorrentManagerI
-	peerManager    protocol.PeerManagerI
+	torrentManager interfaces.TorrentManagerI
+	peerManager    interfaces.PeerManagerI
 	strategy       scrapeStrategy
 }
 
-func NewAnnouncer(announcerUrlString, infoHash string, manager protocol.TorrentManagerI,peerManager protocol.PeerManagerI) (*Announcer, error) {
+func NewAnnouncer(announcerUrlString, infoHash string, manager interfaces.TorrentManagerI,peerManager interfaces.PeerManagerI) (*Announcer, error) {
 	var baseTracker *Announcer
 	trackerURL, err := url.Parse("udp://tracker.opentrackr.org:1337")
 
@@ -83,11 +83,11 @@ func (t *Announcer) setTrackerStrategy(url *url.URL){
 
 func (t *Announcer) getCurrentState() string {
 	switch t.torrentManager.GetState() {
-	case protocol.StartTorrent:
+	case interfaces.StartTorrent:
 		return "started"
-	case protocol.StopTorrent:
+	case interfaces.StopTorrent:
 		return "stopped"
-	case protocol.CompleteTorrent:
+	case interfaces.CompleteTorrent:
 		return "completed"
 	default:
 		return ""

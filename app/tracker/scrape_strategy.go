@@ -1,8 +1,8 @@
 package tracker
 
 import (
+	"DawnTorrent/interfaces"
 	"DawnTorrent/parser"
-	"DawnTorrent/protocol"
 	"DawnTorrent/utils"
 	"bufio"
 	"errors"
@@ -71,7 +71,7 @@ func (trp *httpTracker2) execRequest() (*parser.BMap, error) {
 
 func (trp *httpTracker2) handleRequest() (int, error) {
 	print("hello from http handle request")
-	var peers []protocol.PeerI
+	var peers []interfaces.PeerI
 	trackerResponse, err := trp.execRequest()
 	if err != nil {
 		return 0, nil
@@ -79,7 +79,7 @@ func (trp *httpTracker2) handleRequest() (int, error) {
 
 	peers = trp.peerManager.CreatePeersFromHTTPTracker(trackerResponse.BLists["peers"].BMaps)
 
-	trp.peerManager.AddNewPeer(peers)
+	trp.peerManager.AddNewPeer(peers...)
 
 	return 0, nil
 }
@@ -90,7 +90,7 @@ type udpTracker2 struct {
 }
 
 func (trp *udpTracker2) handleRequest() (int, error) {
-	var peers []protocol.PeerI
+	var peers []interfaces.PeerI
 	var err error
 	connectionResponse, conn, err := trp.sendConnectRequest(time.Now().Add(udpTryOutDeadline))
 
@@ -108,7 +108,7 @@ func (trp *udpTracker2) handleRequest() (int, error) {
 	}
 
 	peers = trp.peerManager.CreatePeersFromUDPTracker(announceResponse.PeersAddresses)
-	trp.Announcer.peerManager.AddNewPeer(peers)
+	trp.Announcer.peerManager.AddNewPeer(peers...)
 
 
 	//TODO need to move that in peer manager

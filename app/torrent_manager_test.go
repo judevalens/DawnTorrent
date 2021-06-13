@@ -1,6 +1,7 @@
 package app
 
 import (
+	torrent2 "DawnTorrent/app/torrent"
 	"DawnTorrent/app/tracker"
 	"context"
 	"github.com/stretchr/testify/assert"
@@ -11,7 +12,7 @@ import (
 
 func TestNewTorrent(t *testing.T) {
 	testTorrent := "../files/ubuntu-20.04-desktop-amd64.iso.torrent"
-	torrent, err := createNewTorrent(testTorrent)
+	torrent, err := torrent2.createNewTorrent(testTorrent)
 
 	if err != nil{
 		assert.Fail(t, err.Error())
@@ -50,7 +51,7 @@ func TestTracker(t *testing.T){
 
 	var err error
 	testTorrent := "../files/ubuntu-20.04-desktop-amd64.iso.torrent"
-	torrent, err := createNewTorrent(testTorrent)
+	torrent, err := torrent2.createNewTorrent(testTorrent)
 
 	if err != nil{
 		assert.Fail(t, err.Error())
