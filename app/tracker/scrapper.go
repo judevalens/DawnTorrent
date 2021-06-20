@@ -5,7 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	log "github.com/sirupsen/logrus"
 	"net/url"
 	"os"
 	"reflect"
@@ -60,10 +60,9 @@ func NewAnnouncer(announcerUrlString, infoHash string, manager interfaces.Torren
 
 	baseTracker.setTrackerStrategy(trackerURL)
 
-	log.Printf("url: %v, url scheme : %v", announcerUrlString, trackerURL.Scheme)
 
 
-	log.Printf("creating new Announcer: %v", reflect.TypeOf(baseTracker))
+	log.Debugf("creating new Announcer: %v", reflect.TypeOf(baseTracker))
 
 	return baseTracker, nil
 }
@@ -130,8 +129,7 @@ type initialRequest struct {
 func (i *initialRequest) handle() {
 	var err error
 	var interval int
-	log.Printf("trackerUrl: %v", i.scrapper.mainTrackerUrl.String())
-	log.Printf("sending initial 2 Announcer request, trackerType : %v", reflect.TypeOf(i.scrapper))
+
 	interval, err = i.scrapper.strategy.handleRequest()
 
 
@@ -149,7 +147,7 @@ func (i *initialRequest) handle() {
 
 	i.scrapper.interval, _ = time.ParseDuration(strconv.Itoa(interval)+"s")
 	i.scrapper.state = &recurringRequest{scrapper: i.scrapper}
-	log.Print("launching Announcer request")
+	log.Debug("launching Announcer request")
 	i.scrapper.state.handle()
 
 }
@@ -166,7 +164,7 @@ func loopThroughList(scrapper *Announcer)(int,error){
 		scrapper.setTrackerStrategy(trackerUrl)
 		interval, err = scrapper.strategy.handleRequest()
 		if err != nil {
-			log.Printf("loopThroughList err : ^%v",err)
+			log.Errorf("loopThroughList err : %v",err)
 			continue
 		}
 
@@ -187,9 +185,9 @@ type recurringRequest struct {
 }
 
 func (r *recurringRequest) handle() {
-	log.Printf("next tracker request will fire in %v", r.scrapper.interval)
+	log.Debug("next tracker request will fire in %v", r.scrapper.interval)
 	r.scrapper.timer = time.AfterFunc(r.scrapper.interval, func() {
-		log.Printf("sending initial Announcer request, trackerType : %v", reflect.TypeOf(r.scrapper))
+		log.Debug("sending initial Announcer request, trackerType : %v", reflect.TypeOf(r.scrapper))
 
 		interval, err := r.scrapper.strategy.handleRequest()
 		if err != nil {

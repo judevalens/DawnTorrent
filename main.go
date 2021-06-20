@@ -6,7 +6,7 @@ import (
 	"DawnTorrent/utils"
 	"bufio"
 	"fmt"
-	"log"
+	log "github.com/sirupsen/logrus"
 	"os"
 	"strconv"
 
@@ -22,12 +22,17 @@ const (
 	torrentTorrent = 2
 )
 
-
+func init() {
+	log.SetLevel(log.DebugLevel)
+	log.SetFormatter(&log.TextFormatter{
+		ForceColors: true,
+		FullTimestamp: true,
+	})
+}
 
 func main() {
 
 	//done := make(chan bool)
-
 
 	//c.addTorrent("/home/jude/GolandProjects/DawnTorrent/files/ubuntu-20.04-desktop-amd64.iso.torrent",PeerProtocol.InitTorrentFile_)
 	//c.torrents["1"].Start()

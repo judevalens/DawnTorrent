@@ -40,7 +40,7 @@ func TestNewTorrent(t *testing.T) {
 	}
 }
 
- func TestTorrentManager_Init(t *testing.T) {
+func TestTorrentManager_Init(t *testing.T) {
 	 testTorrent := "../files/ubuntu-20.04-desktop-amd64.iso.torrent"
 
 	 _ = NewTorrentManager(testTorrent)

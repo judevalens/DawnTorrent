@@ -8,6 +8,7 @@ import (
 	"net"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -20,9 +21,6 @@ type Peer struct {
 	isChoked                        bool
 	isChocking                      bool
 	isInterested                    bool
-	chocked                         bool
-	interested                      bool
-	AvailablePieces                 []bool
 	numByteDownloaded               int
 	time                            time.Time
 	lastTimeStamp                   time.Time
@@ -33,18 +31,31 @@ type Peer struct {
 	PendingRequest                  map[string]*BlockRequest
 	bitfield                        []byte
 	mutex                           *sync.Mutex
+	interestPoint					int64// how many piece I could get from him
 }
 
-func (peer *Peer) GetPendingRequest() map[string]*BlockRequest {
-	panic("implement me")
+func (peer *Peer) GetInterestPoint() int {
+	return int(atomic.LoadInt64(&peer.interestPoint))
 }
 
-func (peer *Peer) isAvailable(pieceIndex int) bool {
-	return true
+func (peer *Peer) SetInterestPoint(i int) {
+	atomic.StoreInt64(&peer.interestPoint, int64(i))
 }
 
-func (peer *Peer) resolveRequest() {
 
+func (peer *Peer) isAvailable(reqId string) bool {
+
+	// verifies if this particular block request is already pending
+	_, present := peer.PendingRequest[reqId]
+
+	if peer.isChocking || present{
+		return false
+	}
+	return  len(peer.PendingRequest) <= maxPendingRequest
+}
+
+func (peer *Peer) resolvedRequest(reqId string)  {
+	delete(peer.PendingRequest,reqId)
 }
 
 func (peer *Peer) UpdateBitfield(pieceIndex int) {
@@ -102,6 +113,7 @@ func (peer *Peer) GetConnection() *net.TCPConn {
 }
 
 func (peer *Peer) SendMsg(msg []byte) (int, error) {
+	log.Print("sending msg to peer.....")
 	return peer.connection.Write(msg)
 }
 
@@ -115,16 +127,17 @@ func (peer *Peer) HasPiece(pieceIndex int) bool {
 
 }
 
+
+
 func NewPeer(ip, port, id string) *Peer {
 	newPeer := new(Peer)
 	newPeer.id = id
 	newPeer.port = port
 	newPeer.ip = ip
 	newPeer.isChocking = true
-	newPeer.interested = false
-	newPeer.chocked = true
-	newPeer.interested = false
-	newPeer.isFree = true
+	newPeer.isChoked  = true
+	newPeer.isInteresting = false
+	newPeer.isFree = false
 	newPeer.mutex = new(sync.Mutex)
 	return newPeer
 }

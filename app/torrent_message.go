@@ -1,6 +1,7 @@
 package app
 
 import (
+	"DawnTorrent/utils"
 	"bytes"
 	"errors"
 	"log"
@@ -188,6 +189,16 @@ type RequestMsg struct {
 
 func (request RequestMsg) handleMsg(manager *TorrentManager) {
 	manager.HandleRequestMsg(request)
+}
+
+func (request RequestMsg) Marshal()[]byte{
+	return bytes.Join([][]byte{
+		utils.IntToByte(requestMsgLen,4),
+		utils.IntToByte(RequestMsgId,1),
+		utils.IntToByte(request.PieceIndex,4),
+		utils.IntToByte(request.BeginIndex,4),
+		utils.IntToByte(request.BlockLength,4),
+		},[]byte{})
 }
 
 type CancelRequestMsg struct {

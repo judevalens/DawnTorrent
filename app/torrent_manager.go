@@ -52,7 +52,6 @@ func (manager *TorrentManager) GetStats() (int, int, int) {
 	return manager.TotalDownloaded,manager.Uploaded,manager.Left
 }
 
-
 func NewTorrentManager(torrentPath string) *TorrentManager {
 	manager := new(TorrentManager)
 	manager.Torrent, _ = CreateNewTorrent(torrentPath)

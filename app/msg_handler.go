@@ -6,9 +6,11 @@ type msgHandler struct {
 
 
 func (manager *TorrentManager) HandleUnInterestedMsg(msg UnInterestedMsg) {
+	manager.PeerManager.activePeers[msg.GetPeer().GetId()].isInterested = false
 }
 
 func (manager *TorrentManager) HandleInterestedMsg(msg InterestedMsg) {
+	msg.GetPeer().isInterested = false
 }
 
 func (manager *TorrentManager) HandleUnChokeMsg(msg UnChockedMsg) {
@@ -39,9 +41,10 @@ func (manager *TorrentManager) HandleBitFieldMsg(msg BitfieldMsg) {
 }
 
 func (manager *TorrentManager) HandlePieceMsg(msg PieceMsg) {
-	manager.downloader.SyncOperation <- func() {
-		manager.downloader.PutPiece(msg)
-	}
+	//os.Exit(29)
+
+	manager.downloader.PutPiece(msg)
+
 }
 
 func (manager *TorrentManager) HandleRequestMsg(msg RequestMsg) {

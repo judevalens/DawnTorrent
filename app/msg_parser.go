@@ -61,7 +61,7 @@ func parsePieceMsg(rawMsg []byte, baseMSg header) (PieceMsg, error) {
 	msg.BeginIndex = int(binary.BigEndian.Uint32(rawMsg[9:13]))
 	msg.BlockLength = int(math.Abs(float64(baseMSg.Length - pieceMsgLen)))
 	msg.Payload = make([]byte, msg.BlockLength)
-
+	copy(msg.Payload,rawMsg[13:msg.BlockLength+13])
 	return msg,nil
 }
 

@@ -7,8 +7,8 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	log "github.com/sirupsen/logrus"
 	"io/ioutil"
-	"log"
 	"math/rand"
 	"net"
 	"net/http"
@@ -70,7 +70,6 @@ func (trp *httpTracker2) execRequest() (*parser.BMap, error) {
 }
 
 func (trp *httpTracker2) handleRequest() (int, error) {
-	print("hello from http handle request")
 	var peers []interfaces.PeerI
 	trackerResponse, err := trp.execRequest()
 	if err != nil {
@@ -84,7 +83,6 @@ func (trp *httpTracker2) handleRequest() (int, error) {
 	return 0, nil
 }
 
-
 type udpTracker2 struct {
 	*Announcer
 }
@@ -96,32 +94,21 @@ func (trp *udpTracker2) handleRequest() (int, error) {
 
 	if err != nil{
 		//TODO must be fixed
-		log.Print(err)
+		log.Error(err)
 		return 0, err
 	}
 
 	announceResponse,err := trp.sendAnnounceRequest(time.Now().Add(udpTryOutDeadline),conn,connectionResponse)
 
 	if err != nil {
-		log.Print(err)
+		log.Error(err)
 		return 0, err
 	}
 
 	peers = trp.peerManager.CreatePeersFromUDPTracker(announceResponse.PeersAddresses)
 	trp.Announcer.peerManager.AddNewPeer(peers...)
 
-
-	//TODO need to move that in peer manager
-	/*
-	for _, peer := range peers {
-		trp.Announcer.torrentManager.PeerManager.PeerOperationReceiver <- AddPeerOperation{
-			Peer:        peer,
-			PeerManager: trp.Announcer.torrentManager.PeerManager,
-			MsgReceiver: trp.Announcer.torrentManager.MsgChan,
-		}
-	}*/
-
-	log.Printf("announce response : interval %v, nSeeders %v, nLeechers %v", announceResponse.Interval, announceResponse.NSeeders, announceResponse.NLeechers)
+	log.Infof("announce response : interval %v, nSeeders %v, nLeechers %v", announceResponse.Interval, announceResponse.NSeeders, announceResponse.NLeechers)
 
 	return announceResponse.Interval, nil
 }
@@ -146,9 +133,7 @@ func (trp *udpTracker2) sendConnectRequest(deadline time.Time) (BaseUdpMsg, *net
 	log.Printf("connectionRequest : %v",connectionRequest)
 	for time.Now().UnixNano() < deadline.UnixNano() {
 
-		log.Printf("sending udp connection request to udp tracker......")
-		nByteSent, err := conn.Write(connectionRequest)
-		log.Printf("n byte sent : %v",nByteSent)
+		_, err := conn.Write(connectionRequest)
 
 		if err != nil {
 			log.Fatal(err)
@@ -169,8 +154,6 @@ func (trp *udpTracker2) sendConnectRequest(deadline time.Time) (BaseUdpMsg, *net
 
 
 		response := ParseUdpConnectionResponse(incomingMsg)
-
-		log.Printf("action %v, connectionID %v, transction %v old transation %v",response.Action,response.ConnectionID,response.TransactionID,transactionId)
 
 		//log.Printf("udp conn res:\n%v",string(incomingMsg))
 
@@ -204,9 +187,7 @@ func (trp *udpTracker2) sendAnnounceRequest(deadline time.Time, conn *net.UDPCon
 			Port:       utils.LocalAddr.Port,
 		})
 
-		log.Printf("raw announce request\n%v", announceRequest)
-		log.Printf("torrent state %v", trp.getCurrentStateInt())
-		log.Printf("my id %v", len(utils.MyID))
+
 
 		_, err = conn.Write(announceRequest)
 		if err != nil {
@@ -227,10 +208,8 @@ func (trp *udpTracker2) sendAnnounceRequest(deadline time.Time, conn *net.UDPCon
 
 		announceResponse := ParseAnnounceResponseUdpMsg(incomingMsg,nByteRead)
 
-		log.Printf("action %v, connectionID %v, transction %v old transation %v",announceResponse.Action,connectionResponse.ConnectionID,announceResponse.TransactionID,transactionId)
 
 		return announceResponse, nil
 	}
 	return AnnounceResponseUdpMsg{}, os.ErrDeadlineExceeded
 }
-

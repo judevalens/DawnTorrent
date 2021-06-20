@@ -9,9 +9,8 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
-	"fmt"
+	log "github.com/sirupsen/logrus"
 	"io"
-	"log"
 	"net"
 	_ "net"
 	"os"
@@ -47,13 +46,18 @@ func newPeerManager(msgReceiver chan TorrentMsg, infoHash string, InfoHashByte [
 
 
 func (manager *PeerManager) HandleMsgStream(ctx context.Context, peer *Peer) error{
-	log.Print("connection to peer OK")
+	log.Infof("connection established to: %v",peer.id)
 	var err error
 	msgLenBuffer := make([]byte, 4)
 	for  {
 
 		//reads the length of the incoming msg
 		_, err = io.ReadFull(peer.GetConnection(), msgLenBuffer)
+
+		if err != nil{
+			log.Fatal(err)
+			continue
+		}
 
 		msgLen := int(binary.BigEndian.Uint32(msgLenBuffer[0:4]))
 
@@ -66,14 +70,11 @@ func (manager *PeerManager) HandleMsgStream(ctx context.Context, peer *Peer) err
 		msg, err := ParseMsg(bytes.Join([][]byte{msgLenBuffer, incomingMsgBuffer}, []byte{}), peer)
 
 		if err != nil{
-			log.Printf("incorrect msg:\n,%v", bytes.Join([][]byte{msgLenBuffer, incomingMsgBuffer}, []byte{}))
+			log.Errorf("incorrect msg:\n,%v", bytes.Join([][]byte{msgLenBuffer, incomingMsgBuffer}, []byte{}))
 			log.Fatal(err)
 		}
-		peer.GetConnection().RemoteAddr().String()
-		print("didnt get to msg\n")
-		msg.getId()
-		print("got  to msg\n")
-		log.Printf("received new msg from : %v, \n %v",peer.GetConnection().RemoteAddr().String(), msg.getId())
+
+		log.Infof("received new msg from : %v, \n %v",peer.id, msg.getId())
 
 		if err != nil {
 			os.Exit(23)
@@ -90,26 +91,33 @@ func (manager *PeerManager) GetActivePeers() map[string]interfaces.PeerI {
 func (manager *PeerManager) AddNewPeer(peers ...interfaces.PeerI) {
 
 	for _, peer := range peers {
-		currentPeer := peer
-		go func() {
-			if currentPeer.GetConnection() == nil {
-				err := manager.connect(currentPeer)
+		go func(peer *Peer) {
+			if peer.GetConnection() == nil {
+				err := manager.connect(peer)
 				if err != nil {
 					return
 				}
 			}
-			err := manager.HandleMsgStream(nil,currentPeer.(*Peer))
+			manager.activePeers[peer.GetId()] = peer
+
+			err := manager.HandleMsgStream(nil,peer)
+
 			if err != nil {
 				log.Printf("something bad happen while peer was connected\n err: %v", err)
 			}
-		}()
+		}(peer.(*Peer))
 	}
 
 }
 
 
-func (manager *PeerManager) GetAvailablePeer() (*Peer,error) {
-	return nil, nil
+func (manager *PeerManager) GetAvailablePeer(reqId string, pieceIndex int) (*Peer, error) {
+	for _, peer := range manager.activePeers {
+		if peer.isAvailable(reqId) && peer.HasPiece(pieceIndex) {
+			return peer,nil
+		}
+	}
+	return nil, errors.New("no peers available")
 }
 
 func (manager *PeerManager) handleConnectionRequest(connection *net.TCPConn) {
@@ -142,7 +150,6 @@ func (manager *PeerManager) handleConnectionRequest(connection *net.TCPConn) {
 	newPeer.connection = connection
 
 	log.Printf("incoming connection was succesful")
-	os.Exit(23)
 	manager.AddNewPeer(newPeer)
 
 }
@@ -154,21 +161,19 @@ func (manager *PeerManager) connect(peer interfaces.PeerI) error {
 		return err
 	}
 	connection, err := net.DialTCP("tcp", nil, peer.GetAddress())
-	log.Printf("connecting to: %v, conn %v\n", peer.GetAddress().String(), connection)
+	log.Infof("connecting to: %v, conn %v\n", peer.GetAddress().String(), connection)
 	if err != nil {
-		log.Printf("error while connecting to peer %v :\n%v", peer.GetAddress().String(), err)
+		log.Error("error while connecting to peer %v :\n%v", peer.GetAddress().String(), err)
 		return err
 	}
 	err = connection.SetKeepAlive(true)
 	err = connection.SetKeepAlivePeriod(utils.KeepAliveDuration)
-	fmt.Printf("keep alive %v\n", utils.KeepAliveDuration)
 	msg := newHandShakeMsg(manager.InfoHashByte, utils.MyID)
 
-	fmt.Printf("outgoing handskahe, %v", string(msg))
 	_, err = connection.Write(msg)
 
 	if err != nil {
-		log.Printf("error while sending handshake to peer %v :\n%v", peer.GetAddress().String(), err)
+		log.Errorf("error while sending handshake to peer %v :\n%v", peer.GetAddress().String(), err)
 		os.Exit(23)
 		return err
 	}
@@ -176,7 +181,7 @@ func (manager *PeerManager) connect(peer interfaces.PeerI) error {
 	_, err = io.ReadFull(connection, handshakeBytes)
 
 	if err != nil {
-		log.Printf("error while reading handshake from peer %v :\n%v", peer.GetAddress().String(), err)
+		log.Errorf("error while reading handshake from peer %v :\n%v", peer.GetAddress().String(), err)
 		return err
 	}
 
@@ -194,13 +199,13 @@ func (manager *PeerManager) connect(peer interfaces.PeerI) error {
 			return err
 		}
 
-		log.Printf("remote hash %v, local hash %v", string(handShakeMsg.infoHash), string(manager.InfoHashByte))
+		log.Debug("remote hash %v, local hash %v", string(handShakeMsg.infoHash), string(manager.InfoHashByte))
 
 		os.Exit(244)
 		return errors.New("wrong infohash")
 	}
 
-	fmt.Printf("handshake, %v\n", string(handshakeBytes))
+	log.Debug("handshake, %v\n", string(handshakeBytes))
 
 	peer.SetConnection(connection)
 	return nil
@@ -317,4 +322,22 @@ func (manager *PeerManager) receiveOperation(ctx context.Context) {
 		}
 	}
 
+}
+
+func (manager *PeerManager) updateInterest()  {
+	for _, peer := range manager.activePeers {
+		if peer.interestPoint == 0 && peer.isInteresting{
+			_, err := peer.SendMsg(InterestedMsg{
+				header{
+					ID:     UnInterestedMsgId,
+					Length: defaultMsgLen,
+				},
+			}.Marshal())
+			if err != nil {
+				log.Error(err)
+				continue
+			}
+			peer.isInteresting = false
+		}
+	}
 }

@@ -60,7 +60,6 @@ func GetRandomId(s int) string {
 	var peerId string
 
 	for _, n := range peerIDRandom {
-		fmt.Printf("%v\n", n)
 		peerIDRandomArr = append(peerIDRandomArr, byte(n))
 	}
 
@@ -68,12 +67,7 @@ func GetRandomId(s int) string {
 	return peerId
 }
 
-func Debugln(st string) {
 
-	if DEBUG {
-		fmt.Println(st)
-	}
-}
 
 func LocalAddress() net.IP {
 	list, err := net.Interfaces()
@@ -83,7 +77,6 @@ func LocalAddress() net.IP {
 
 	for _, iface := range list {
 
-		fmt.Printf("%v flag %v index %v\n", iface.Name, iface.Flags.String(), iface.Index)
 
 		interfaceAddrs, _ := iface.Addrs()
 		for _, addr := range interfaceAddrs {

@@ -41,4 +41,6 @@ type PeerI interface {
 	IsInterested() bool
 	SetInterest(x bool)
 	UpdateBitfield(pieceIndex int)
+	GetInterestPoint()	int
+	SetInterestPoint(int)
 }
