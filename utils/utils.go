@@ -55,7 +55,7 @@ func GetRandomId(s int) string {
 	randomSeed := rand.New(rand.NewSource(time.Now().UnixNano()))
 	peerIDRandom := randomSeed.Perm(s/2)
 
-	fmt.Printf("%v", peerIDRandom)
+	//fmt.Printf("%v", peerIDRandom)
 	var peerIDRandomArr []byte
 	var peerId string
 

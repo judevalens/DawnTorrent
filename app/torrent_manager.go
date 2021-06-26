@@ -1,10 +1,11 @@
 package app
 
 import (
+	"DawnTorrent/app/torrent"
 	"DawnTorrent/app/tracker"
 	"DawnTorrent/interfaces"
 	"context"
-	"log"
+	log "github.com/sirupsen/logrus"
 	"reflect"
 	"sync"
 )
@@ -22,7 +23,7 @@ type torrentManagerStateI interface {
 }
 
 type TorrentManager struct {
-	Torrent         *Torrent
+	Torrent         *torrent.Torrent
 	PeerManager     *PeerManager
 	stopMsgPipeLine chan interface{}
 	MsgChan         chan TorrentMsg
@@ -54,17 +55,16 @@ func (manager *TorrentManager) GetStats() (int, int, int) {
 
 func NewTorrentManager(torrentPath string) *TorrentManager {
 	manager := new(TorrentManager)
-	manager.Torrent, _ = CreateNewTorrent(torrentPath)
-	manager.MsgChan = make(chan TorrentMsg)
+	manager.Torrent, _ = torrent.CreateNewTorrent(torrentPath)
+	manager.MsgChan = make(chan TorrentMsg,100)
 	manager.SyncOperation = make(chan interfaces.SyncOp)
-	manager.PeerManager = newPeerManager(manager.MsgChan, manager.Torrent.InfoHashHex,manager.Torrent.InfoHashByte[:])
-	manager.downloader = NewTorrentDownloader(manager.Torrent,manager,manager.PeerManager)
-	newScrapper, err := tracker.NewAnnouncer(manager.Torrent.AnnouncerUrl, manager.Torrent.InfoHash,manager,manager.PeerManager)
+	manager.PeerManager = newPeerManager(manager.MsgChan, manager.Torrent.InfoHashHex,manager.Torrent.InfoHash)
+	manager.downloader = NewTorrentDownloader(manager.Torrent,manager.PeerManager)
+	newScrapper, err := tracker.NewAnnouncer(manager.Torrent.Announce, manager.Torrent.InfoHash,manager,manager.PeerManager)
 
 	if err != nil{
 		log.Fatal(err)
 	}
-
 	manager.scrapper = newScrapper
 
 	manager.torrentState = interfaces.StopTorrent
@@ -110,16 +110,17 @@ func (state StoppedStated) start() {
 
 	ctx, cancelRoutine := context.WithCancel(context.TODO())
 
+
+
 	go state.manager.msgRouter(ctx)
 	go state.manager.receiveOperation(ctx)
 	go state.manager.PeerManager.receiveOperation(ctx)
 	go state.manager.scrapper.StartScrapper(ctx)
 	go state.manager.downloader.Start(ctx)
+	go state.manager.PeerManager.GetAvailablePeer(ctx)
 	state.manager.myState = &startedStated{manager: state.manager,cancelRoutines: cancelRoutine}
 
-	state.manager.PeerManager.PeerOperationReceiver <- startServer{
-		swarm: state.manager.PeerManager,
-	}
+
 
 	log.Printf("new state: %v", reflect.TypeOf(state.manager.myState))
 }
@@ -167,7 +168,7 @@ func (manager *TorrentManager) msgRouter(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case msg := <-manager.MsgChan:
-			log.Printf("routing msg..., msgID : %v", msg.getId())
+			log.Debugf("routing msg..., msgID : %v", msg.getId())
 			msg.handleMsg(manager)
 		}
 

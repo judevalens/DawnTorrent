@@ -72,6 +72,7 @@ func ParseMsg(msg []byte, peer *Peer) (TorrentMsg, error) {
 	baseMsg.Length = int(binary.BigEndian.Uint32(msg[0:4]))
 	// checking for keep-alive msg
 	if baseMsg.Length == 0{
+		baseMsg.ID = -1
 		return baseMsg,nil
 	}
 

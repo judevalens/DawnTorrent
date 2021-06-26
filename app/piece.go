@@ -3,6 +3,7 @@ package app
 import (
 	"DawnTorrent/interfaces"
 	"DawnTorrent/utils"
+	log "github.com/sirupsen/logrus"
 	"math"
 	"sync"
 	"sync/atomic"
@@ -16,7 +17,7 @@ type Piece struct {
 	SubPieceLen     int
 	PieceIndex      int
 	State           int
-	Pieces          []byte
+	buffer          []byte
 	QueueIndex      int
 	Availability    int64
 	subPieceMask    []byte
@@ -29,32 +30,35 @@ type Piece struct {
 	nSubPiece         int
 	AvailabilityIndex int
 	requestIndex 		int
+	endOfPiece 			bool
+	nPendingRequest	int
+	writer PieceWriter
+	blockChan chan PieceMsg
 }
 
 func (piece Piece) getBlockRequestInfo(index int) (int, int, bool) {
 
 	startIndex := BlockLen * (index)
 
-	currentTotalLength := BlockLen * (index + 1)
+	currentTotalLength := BlockLen + startIndex
 
 	if currentTotalLength > piece.pieceLength {
-		return startIndex, currentTotalLength - piece.pieceLength, true
+		currentTotalLength = startIndex + (piece.pieceLength%startIndex)
 	}
 
-	return startIndex, BlockLen, false
+	return startIndex, BlockLen, currentTotalLength==piece.pieceLength
 }
 
 func (piece *Piece) getNextRequest(nRequest int) []*BlockRequest {
 	var requests []*BlockRequest
 
+	if piece.endOfPiece {
+		return requests
+	}
+
 	for i := piece.requestIndex; i < piece.requestIndex + nRequest; i++ {
 
 		startIndex, currentSubPieceLength, endOfPiece := piece.getBlockRequestInfo(i)
-
-		if endOfPiece {
-			piece.requestIndex += len(requests)
-			return requests
-		}
 
 		msgLength := requestMsgLen + currentSubPieceLength
 
@@ -77,6 +81,12 @@ func (piece *Piece) getNextRequest(nRequest int) []*BlockRequest {
 		}
 
 		requests = append(requests, req)
+
+		if endOfPiece {
+			piece.requestIndex += len(requests)
+			piece.endOfPiece = true
+			return requests
+		}
 
 	}
 
@@ -139,6 +149,42 @@ func (piece *Piece) buildBitfield() {
 	piece.subPieceMask = make([]byte, int(math.Ceil(float64(piece.nSubPiece)/float64(8))))
 }
 
+func (piece *Piece) download(peer *Peer) error {
+	piece.buildBitfield()
+	for  piece.downloaded < piece.pieceLength {
+		requests := piece.getNextRequest(maxPendingRequest-piece.nPendingRequest)
+
+		for _, request := range requests {
+			_, err := peer.GetConnection().Write(request.Marshal())
+			piece.nPendingRequest++
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func (piece *Piece) putPiece(msg PieceMsg){
+	log.Info("putting piece....")
+	if !piece.hasSubPiece(msg.BeginIndex) && piece.downloaded < piece.pieceLength{
+		piece.writeToBuffer(msg.Payload,msg.BeginIndex)
+		piece.nPendingRequest--
+	}
+}
+
+
+
+func (piece *Piece) writeToBuffer(data []byte, startIndex int) bool {
+	if piece.downloaded < piece.pieceLength {
+		subPieceLen := len(data)
+		copy(piece.buffer[startIndex:startIndex+subPieceLen], data)
+		piece.downloaded += subPieceLen
+	}
+	return piece.downloaded == piece.pieceLength
+}
+
 func (piece *Piece) hasSubPiece(startIndex int) bool {
 	subPieceIndex := startIndex/BlockLen
 
@@ -157,4 +203,3 @@ func (piece *Piece) UpdateBitfield(startIndex int) {
 	bitIndex := 7 - (subPieceIndex%8)
 	piece.subPieceMask[byteIndex] = utils.BitMask(piece.subPieceMask[byteIndex], 1, bitIndex)
 }
-

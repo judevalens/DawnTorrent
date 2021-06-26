@@ -1,8 +1,9 @@
 package app
 
 import (
+	"DawnTorrent/app/torrent"
 	"DawnTorrent/utils"
-	"log"
+	log "github.com/sirupsen/logrus"
 	"os"
 	"path"
 )
@@ -15,7 +16,7 @@ type PieceWriter struct {
 	currenBufferLen int
 	isBufferFull    bool
 	pieceLength     int // represent the normal length of each piece (last piece's length might be different)
-	metaData        []fileMetadata
+	segments        []torrent.FileSegment
 }
 
 func (writer *PieceWriter) setNewPiece(bufferSize, pieceIndex int) {
@@ -46,12 +47,12 @@ func (writer *PieceWriter) writeToBuffer(data []byte, startIndex int) bool {
 func (writer *PieceWriter) writeToFile(data []byte, fileName string, startIndex int) (int, error) {
 
 	filePath := path.Join(utils.TorrentHomeDir, fileName)
-	file, err := os.OpenFile(filePath, os.O_CREATE|os.O_RDWR, os.ModePerm)
+	_, err := os.OpenFile(filePath, os.O_CREATE|os.O_RDWR, os.ModePerm)
 	if err != nil {
 		return 0, err
 	}
-	nByte, err := file.WriteAt(data, int64(startIndex))
-	log.Printf("wrote %v bytes", nByte)
+	nByte, err := len(data),nil //file.WriteAt(data, int64(startIndex))
+	log.Debugf("wrote %v bytes", nByte)
 	if err != nil {
 		return 0, err
 	}
@@ -73,26 +74,29 @@ func (writer *PieceWriter) writePiece() error {
 	relativeEndIndex := writer.bufferSize
 	remaining := writer.bufferSize
 
-	for _, metadatum := range writer.metaData {
+	for _, metadatum := range writer.segments {
 
 		if remaining == 0 {
 			break
 		}
 
-		log.Printf("file path %v, start Index %v, end index %v", metadatum.Path, metadatum.StartIndex, metadatum.EndIndex)
+		log.Debugf("file path %v, start Index %v, end index %v", metadatum.Path, metadatum.StartIndex, metadatum.EndIndex)
 
 		/*	case a -> file is inside piece
 			1---|-2----3--|--4
 		*/
-		caseA := metadatum.StartIndex > absStartIndex && metadatum.EndIndex < absEndIndex
+		caseA :=  absStartIndex < metadatum.StartIndex && absEndIndex > metadatum.EndIndex
+
 		/*	case b -> piece overlaps over two files, trying to get first block
 			1--|--2-|---3----4
 		*/
-		caseB := metadatum.StartIndex <= absStartIndex && metadatum.EndIndex > absStartIndex
+		caseB := absStartIndex >= metadatum.StartIndex && absStartIndex <= metadatum.EndIndex
+
 		/*	case c -> piece overlaps over two file, trying to get second block
 			1---|-2--|--3----4
 		*/
-		caseC := metadatum.StartIndex >= absStartIndex && metadatum.EndIndex >= absEndIndex
+		caseC := absStartIndex <= metadatum.StartIndex && absEndIndex <= metadatum.EndIndex
+
 
 		if caseA {
 			writeAt = 0
@@ -110,12 +114,19 @@ func (writer *PieceWriter) writePiece() error {
 			writeAt = 0
 			relativeStartIndex = metadatum.StartIndex - absStartIndex
 			relativeEndIndex = writer.bufferSize
+		}else{
+
+			 continue
+
+			log.Debugf("): start index %v, abs start index %v, relative end index %v,abs end index %v, end index %v, path %v", relativeStartIndex, absStartIndex, relativeEndIndex, absEndIndex, metadatum.EndIndex, metadatum.Path)
+			log.Fatalf("piece index %v",writer.pieceIndex)
+			os.Exit(29837)
 		}
 
-		log.Printf("start index %v, abs start index %v, relative end index %v,abs end index %v, end index %v, path %v", relativeStartIndex, absStartIndex, relativeEndIndex, absEndIndex, metadatum.EndIndex, metadatum.Path)
+		log.Debugf("start index %v, abs start index %v, relative end index %v,abs end index %v, end index %v, path %v", relativeStartIndex, absStartIndex, relativeEndIndex, absEndIndex, metadatum.EndIndex, metadatum.Path)
 
 		// write to slice of data to the piece where it belongs
-		nByte, err := writer.writeToFile(writer.buffer[relativeStartIndex:relativeEndIndex], metadatum.Path, writeAt)
+		nByte, err := writer.writeToFile(writer.buffer[relativeStartIndex:relativeEndIndex], metadatum.GetPath(), writeAt)
 		if err != nil {
 			return err
 		}

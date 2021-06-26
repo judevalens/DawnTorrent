@@ -75,9 +75,9 @@ type HandShake struct {
 	peerID        string
 }
 
-func newHandShakeMsg(infohash []byte, peerID string) []byte {
+func newHandShakeMsg(infohash , peerID string) []byte {
 	msg := HandShake{
-		infoHash: infohash,
+		infoHash: []byte(infohash),
 		peerID: peerID,
 	}
 	return msg.marshal()

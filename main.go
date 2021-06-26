@@ -2,6 +2,7 @@ package main
 
 import (
 	"DawnTorrent/app"
+	"DawnTorrent/app/torrent"
 	"DawnTorrent/interfaces"
 	"DawnTorrent/utils"
 	"bufio"
@@ -23,7 +24,9 @@ const (
 )
 
 func init() {
-	log.SetLevel(log.DebugLevel)
+	//log.SetOutput(ioutil.Discard)
+
+	log.SetLevel(log.InfoLevel)
 	log.SetFormatter(&log.TextFormatter{
 		ForceColors: true,
 		FullTimestamp: true,
@@ -37,10 +40,30 @@ func main() {
 	//c.addTorrent("/home/jude/GolandProjects/DawnTorrent/files/ubuntu-20.04-desktop-amd64.iso.torrent",PeerProtocol.InitTorrentFile_)
 	//c.torrents["1"].Start()
 	utils.InitDir()
-	torrentPath := "files/cosmos-laundromat.torrent"
+	torrentPath := "files/debian-mac-10.10.0-amd64-netinst.iso.torrent"
+
+	newTorrent, err := torrent.CreateNewTorrent(torrentPath)
+	if err != nil {
+		log.Fatal(err)
+		return
+	}
+
+
+	log.Infof("comment: %v\n",newTorrent.Comment)
+	log.Infof("annouce list: %v\n",newTorrent.AnnounceList)
+	log.Infof("info: %v\n",newTorrent.SingleInfo.Name)
+	log.Infof("length : %v\n",newTorrent.SingleInfo.Length)
+	log.Infof("piece length : %v\n",newTorrent.SingleInfo.PieceLength)
+	log.Infof("mode : %v\n",newTorrent.FileMode)
+
+
+
+
 	 manager1 := app.NewTorrentManager(torrentPath)
 	go manager1.Init()
 	 manager1.SetState(interfaces.StartTorrent)
+
+
 	println("non blocking")
 
 	/*
@@ -67,11 +90,12 @@ func main() {
 				log.Printf("err: %v", err)
 				continue
 			}
-			manager1.SetState(state)
+
+			_ =state
+			//manager1.SetState(state)
 		i++
 	}
 
-	manager1.Stop()
 
 	if err := scanner.Err(); err != nil {
 		log.Println(err)

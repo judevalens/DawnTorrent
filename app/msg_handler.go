@@ -1,12 +1,14 @@
 package app
 
+import "log"
+
 type msgHandler struct {
 
 }
 
 
 func (manager *TorrentManager) HandleUnInterestedMsg(msg UnInterestedMsg) {
-	manager.PeerManager.activePeers[msg.GetPeer().GetId()].isInterested = false
+	 msg.GetPeer().isInterested = false
 }
 
 func (manager *TorrentManager) HandleInterestedMsg(msg InterestedMsg) {
@@ -15,14 +17,20 @@ func (manager *TorrentManager) HandleInterestedMsg(msg InterestedMsg) {
 
 func (manager *TorrentManager) HandleUnChokeMsg(msg UnChockedMsg) {
 	msg.GetPeer().SetChoke(false)
+	manager.PeerManager.peerAlert.Signal()
 
 }
 func (manager *TorrentManager) HandleChokeMsg(msg ChockedMSg) {
+	log.Printf("choking......")
+
 	msg.GetPeer().SetChoke(true)
+	manager.PeerManager.peerAlert.Signal()
 }
 
 func (manager *TorrentManager) HandleHaveMsg(msg HaveMsg) {
 	msg.GetPeer().UpdateBitfield(msg.PieceIndex)
+	manager.PeerManager.peerAlert.Signal()
+
 	// we use the sync channel because we can't update the piece priority pendingRequest concurrently
 	manager.SyncOperation <- func() {
 		manager.downloader.updatePiecePriority(msg.GetPeer())
@@ -33,6 +41,7 @@ func (manager *TorrentManager) HandleBitFieldMsg(msg BitfieldMsg) {
 
 	peer := msg.GetPeer()
 	peer.SetBitField(msg.Bitfield)
+	manager.PeerManager.peerAlert.Signal()
 
 	manager.SyncOperation <- func() {
 		manager.downloader.updatePiecePriority(peer)
@@ -42,8 +51,7 @@ func (manager *TorrentManager) HandleBitFieldMsg(msg BitfieldMsg) {
 
 func (manager *TorrentManager) HandlePieceMsg(msg PieceMsg) {
 	//os.Exit(29)
-
-	manager.downloader.PutPiece(msg)
+	manager.downloader.putBlock(msg)
 
 }
 

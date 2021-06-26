@@ -1,16 +1,17 @@
 package app
 
 import (
-	"DawnTorrent/parser"
 	"DawnTorrent/utils"
 	"encoding/binary"
-	"log"
+	log "github.com/sirupsen/logrus"
 	"net"
 	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 )
+
+const maxPendingRequestPerPeer = 5
 
 type Peer struct {
 	ip                              string
@@ -27,11 +28,11 @@ type Peer struct {
 	DownloadRate                    float64
 	connection                      *net.TCPConn
 	lastPeerPendingRequestTimeStamp time.Time
-	isFree                          bool
-	PendingRequest                  map[string]*BlockRequest
+	IsFree                          int64
+
 	bitfield                        []byte
 	mutex                           *sync.Mutex
-	interestPoint					int64// how many piece I could get from him
+	interestPoint                   int64 // how many piece I could get from him
 }
 
 func (peer *Peer) GetInterestPoint() int {
@@ -42,25 +43,19 @@ func (peer *Peer) SetInterestPoint(i int) {
 	atomic.StoreInt64(&peer.interestPoint, int64(i))
 }
 
-
-func (peer *Peer) isAvailable(reqId string) bool {
-
-	// verifies if this particular block request is already pending
-	_, present := peer.PendingRequest[reqId]
-
-	if peer.isChocking || present{
+func (peer *Peer) isAvailable(pieceIndex int) bool {
+	if peer.isChocking || !peer.HasPiece(pieceIndex) || atomic.LoadInt64(&peer.IsFree) == 1  {
 		return false
 	}
-	return  len(peer.PendingRequest) <= maxPendingRequest
-}
-
-func (peer *Peer) resolvedRequest(reqId string)  {
-	delete(peer.PendingRequest,reqId)
+	return true
 }
 
 func (peer *Peer) UpdateBitfield(pieceIndex int) {
 	byteIndex := pieceIndex / 8
 	bitIndex := 7 - byteIndex%8
+	if len(peer.bitfield) <= byteIndex{
+		return
+	}
 	peer.bitfield[byteIndex] = utils.BitMask(peer.bitfield[byteIndex], 1, bitIndex)
 }
 
@@ -90,6 +85,7 @@ func (peer *Peer) GetBitfield() []byte {
 
 func (peer *Peer) SetBitField(bitfield []byte) {
 	peer.bitfield = bitfield
+
 }
 
 func (peer *Peer) SetConnection(conn *net.TCPConn) {
@@ -113,7 +109,6 @@ func (peer *Peer) GetConnection() *net.TCPConn {
 }
 
 func (peer *Peer) SendMsg(msg []byte) (int, error) {
-	log.Print("sending msg to peer.....")
 	return peer.connection.Write(msg)
 }
 
@@ -121,13 +116,15 @@ func (peer *Peer) HasPiece(pieceIndex int) bool {
 
 	byteIndex := pieceIndex / 8
 
+	if byteIndex >= len(peer.bitfield) {
+		return false
+	}
+
 	bitIndex := 7 - (pieceIndex % 8)
 
 	return utils.IsBitOn(peer.bitfield[byteIndex], bitIndex)
 
 }
-
-
 
 func NewPeer(ip, port, id string) *Peer {
 	newPeer := new(Peer)
@@ -135,9 +132,9 @@ func NewPeer(ip, port, id string) *Peer {
 	newPeer.port = port
 	newPeer.ip = ip
 	newPeer.isChocking = true
-	newPeer.isChoked  = true
+	newPeer.isChoked = true
 	newPeer.isInteresting = false
-	newPeer.isFree = false
+	newPeer.IsFree = 0
 	newPeer.mutex = new(sync.Mutex)
 	return newPeer
 }
@@ -168,7 +165,4 @@ func NewPeerFromBytes(peerData []byte) *Peer {
 	log.Printf("peer addr: %v\n", ipString+":"+port)
 
 	return NewPeer(ipString, strconv.FormatUint(uint64(portBytes), 10), ipString+":"+port)
-}
-func NewPeerFromMap(peerData *parser.BMap) *Peer {
-	return NewPeer(peerData.Strings["ip"], peerData.Strings["port"], peerData.Strings["peer id"])
 }

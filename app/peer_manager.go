@@ -18,45 +18,55 @@ import (
 	"reflect"
 	"strconv"
 	_ "strconv"
+	"sync"
+	"sync/atomic"
 )
 
 type PeerManager struct {
-	activePeers map[string]*Peer
-	peersId []string
-
+	activePeers *sync.Map
+	peersId     []string
 	nActiveConnection     int
 	maxConnection         int
 	PeerOperationReceiver chan interfaces.Operation
 	msgReceiver           chan TorrentMsg
 	server                *net.TCPListener
 	InfoHashHex           string
-	InfoHashByte          []byte
+	InfoHash              string
+	selectPeer            *Peer
+	queue                 []*Peer
+	peerChan              chan *PeerRequest
+	peerAlert 			  *sync.Cond
 }
 
-func newPeerManager(msgReceiver chan TorrentMsg, infoHash string, InfoHashByte []byte) *PeerManager {
+type PeerRequest struct {
+	pieceIndex int
+	response chan *Peer
+}
+
+func newPeerManager(msgReceiver chan TorrentMsg, infoHashHex string, infoHash string) *PeerManager {
 	peerManager := new(PeerManager)
-	peerManager.InfoHashHex = infoHash
-	peerManager.InfoHashByte = InfoHashByte
+	peerManager.InfoHashHex = infoHashHex
+	peerManager.InfoHash = infoHash
 	peerManager.msgReceiver = msgReceiver
 	peerManager.PeerOperationReceiver = make(chan interfaces.Operation)
-	peerManager.activePeers = make(map[string]*Peer)
+	peerManager.activePeers = &sync.Map{}
+	peerManager.peerChan = make(chan *PeerRequest)
+	peerManager.peerAlert = sync.NewCond(&sync.Mutex{})
 	return peerManager
 }
 
-
-
-func (manager *PeerManager) HandleMsgStream(ctx context.Context, peer *Peer) error{
-	log.Infof("connection established to: %v",peer.id)
+func (manager *PeerManager) HandleMsgStream(ctx context.Context, peer *Peer) error {
+	log.Infof("connection established to: %v", peer.id)
 	var err error
 	msgLenBuffer := make([]byte, 4)
-	for  {
+	for {
 
 		//reads the length of the incoming msg
 		_, err = io.ReadFull(peer.GetConnection(), msgLenBuffer)
 
-		if err != nil{
-			log.Fatal(err)
-			continue
+		if err != nil {
+			log.Infof("1- connection dropped, ip: %v, \n err: %v", peer.connection.RemoteAddr(), err)
+			return err
 		}
 
 		msgLen := int(binary.BigEndian.Uint32(msgLenBuffer[0:4]))
@@ -64,17 +74,19 @@ func (manager *PeerManager) HandleMsgStream(ctx context.Context, peer *Peer) err
 		// reads the full payload
 		incomingMsgBuffer := make([]byte, msgLen)
 		_, err = io.ReadFull(peer.GetConnection(), incomingMsgBuffer)
-		if err != nil{
-			log.Fatal(err)
+		if err != nil {
+			log.Infof("2- connection dropped, ip: %v, \n err: %v", peer.connection.RemoteAddr(), err)
+			return err
 		}
 		msg, err := ParseMsg(bytes.Join([][]byte{msgLenBuffer, incomingMsgBuffer}, []byte{}), peer)
 
-		if err != nil{
+		if err != nil {
 			log.Errorf("incorrect msg:\n,%v", bytes.Join([][]byte{msgLenBuffer, incomingMsgBuffer}, []byte{}))
 			log.Fatal(err)
 		}
 
-		log.Infof("received new msg from : %v, \n %v",peer.id, msg.getId())
+
+		log.Infof("received new msg from : %v, msg id: %v", peer.id, msg.getId())
 
 		if err != nil {
 			os.Exit(23)
@@ -98,9 +110,12 @@ func (manager *PeerManager) AddNewPeer(peers ...interfaces.PeerI) {
 					return
 				}
 			}
-			manager.activePeers[peer.GetId()] = peer
 
-			err := manager.HandleMsgStream(nil,peer)
+			manager.activePeers.Store(peer.GetId(), peer)
+			manager.nActiveConnection += 1
+			manager.peerAlert.Signal()
+			log.Printf("n active connection: %v",manager.nActiveConnection)
+			err := manager.HandleMsgStream(nil, peer)
 
 			if err != nil {
 				log.Printf("something bad happen while peer was connected\n err: %v", err)
@@ -110,14 +125,50 @@ func (manager *PeerManager) AddNewPeer(peers ...interfaces.PeerI) {
 
 }
 
+func (manager *PeerManager) GetAvailablePeer(ctx context.Context)  {
 
-func (manager *PeerManager) GetAvailablePeer(reqId string, pieceIndex int) (*Peer, error) {
-	for _, peer := range manager.activePeers {
-		if peer.isAvailable(reqId) && peer.HasPiece(pieceIndex) {
-			return peer,nil
+	for {
+		log.Printf("going to select.....")
+		select {
+		case <-ctx.Done():
+			return
+		case request := <-manager.peerChan:
+			var selectedPeer *Peer
+			for  {
+				manager.peerAlert.L.Lock()
+				log.Printf("received new req, n %v",manager.nActiveConnection)
+
+				manager.activePeers.Range(func(key, value interface{}) bool {
+					log.Printf("ranging.....")
+					peer := value.(*Peer)
+					if peer.isAvailable(request.pieceIndex) {
+						log.Printf("peer is available")
+						atomic.StoreInt64(&peer.IsFree,1)
+						//	request.response <- peer
+						log.Printf("sent peer")
+
+						selectedPeer = peer
+						return false
+					}else{
+						log.Printf("peer is not available, isFree %v",atomic.LoadInt64(&peer.IsFree))
+					}
+					return true
+				})
+
+				if selectedPeer != nil {
+					request.response <- selectedPeer
+					log.Print("breaking loop")
+					 manager.peerAlert.L.Unlock()
+					break
+				}
+					log.Printf("locking thread")
+					manager.peerAlert.Wait()
+					manager.peerAlert.L.Unlock()
+			}
 		}
+
 	}
-	return nil, errors.New("no peers available")
+
 }
 
 func (manager *PeerManager) handleConnectionRequest(connection *net.TCPConn) {
@@ -140,7 +191,7 @@ func (manager *PeerManager) handleConnectionRequest(connection *net.TCPConn) {
 
 	remotePeerAddr, _ := net.ResolveTCPAddr("tcp", connection.RemoteAddr().String())
 
-	_, err = connection.Write(newHandShakeMsg(manager.InfoHashByte, ""))
+	_, err = connection.Write(newHandShakeMsg(manager.InfoHash, ""))
 
 	if err != nil {
 		return
@@ -168,7 +219,7 @@ func (manager *PeerManager) connect(peer interfaces.PeerI) error {
 	}
 	err = connection.SetKeepAlive(true)
 	err = connection.SetKeepAlivePeriod(utils.KeepAliveDuration)
-	msg := newHandShakeMsg(manager.InfoHashByte, utils.MyID)
+	msg := newHandShakeMsg(manager.InfoHash, utils.MyID)
 
 	_, err = connection.Write(msg)
 
@@ -177,6 +228,7 @@ func (manager *PeerManager) connect(peer interfaces.PeerI) error {
 		os.Exit(23)
 		return err
 	}
+
 	handshakeBytes := make([]byte, 68)
 	_, err = io.ReadFull(connection, handshakeBytes)
 
@@ -192,16 +244,16 @@ func (manager *PeerManager) connect(peer interfaces.PeerI) error {
 		os.Exit(233)
 	}
 
-	if string(handShakeMsg.infoHash) != string(manager.InfoHashByte) {
+	if string(handShakeMsg.infoHash) != manager.InfoHash {
 		err := connection.Close()
 		if err != nil {
 			log.Printf("wrong handshake from %v", peer.GetAddress().String())
 			return err
 		}
 
-		log.Debug("remote hash %v, local hash %v", string(handShakeMsg.infoHash), string(manager.InfoHashByte))
+		log.Debug("remote hash %v, local hash %v", string(handShakeMsg.infoHash), manager.InfoHash)
 
-		os.Exit(244)
+		log.Fatal("wrong infohash")
 		return errors.New("wrong infohash")
 	}
 
@@ -214,7 +266,7 @@ func (manager *PeerManager) connect(peer interfaces.PeerI) error {
 func (manager *PeerManager) CreatePeersFromUDPTracker(peersAddress []byte) []interfaces.PeerI {
 	var peers []interfaces.PeerI
 	i := 0
-	log.Printf("peersAddress len %v",len(peersAddress))
+	log.Printf("peersAddress len %v", len(peersAddress))
 	for i < len(peersAddress) {
 		peer := NewPeerFromBytes(peersAddress[i:(i + 6)])
 		peers = append(peers, peer)
@@ -324,9 +376,11 @@ func (manager *PeerManager) receiveOperation(ctx context.Context) {
 
 }
 
-func (manager *PeerManager) updateInterest()  {
-	for _, peer := range manager.activePeers {
-		if peer.interestPoint == 0 && peer.isInteresting{
+func (manager *PeerManager) updateInterest() {
+	manager.activePeers.Range(func(key, value interface{}) bool {
+
+		peer := value.(*Peer)
+		if peer.interestPoint == 0 && peer.isInteresting {
 			_, err := peer.SendMsg(InterestedMsg{
 				header{
 					ID:     UnInterestedMsgId,
@@ -335,9 +389,12 @@ func (manager *PeerManager) updateInterest()  {
 			}.Marshal())
 			if err != nil {
 				log.Error(err)
-				continue
+				return true
 			}
 			peer.isInteresting = false
 		}
-	}
+
+		return true
+	})
+
 }

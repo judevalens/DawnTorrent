@@ -1,6 +1,7 @@
 package app
 
 import (
+	"DawnTorrent/app/torrent"
 	"DawnTorrent/interfaces"
 	"container/heap"
 	"context"
@@ -8,7 +9,6 @@ import (
 	log "github.com/sirupsen/logrus"
 	"math"
 	"math/rand"
-	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -46,36 +46,48 @@ type (
 	Handles requesting and assembling pieces
 */
 type Downloader struct {
-	queue          *downloadQueue
-	Pieces         []*Piece
-	torrent        *Torrent
-	torrentManager *TorrentManager
-	peerManager    *PeerManager
-	mode           int
-	selectedPiece  *Piece
-	pendingRequest map[string]*BlockRequest
-	ticker         chan time.Time
-	nPiece         int
-	bitfield       []byte
-	SyncOperation  chan interfaces.SyncOp
-	mutex          *sync.Mutex
-	writer         PieceWriter
+	queue            *downloadQueue
+	Pieces           []*Piece
+	torrent          *torrent.Torrent
+	peerManager      *PeerManager
+	mode             int
+	selectedPiece    *Piece
+	blockRequests    *sync.Map
+	pendingRequestsC int64
+	ticker           chan time.Time
+	nPiece           int
+	bitfield         []byte
+	SyncOperation    chan interfaces.SyncOp
+	mutex            *sync.Mutex
+	writer           PieceWriter
+	filesMetaData    []fileMetadata
+
+	jobs           chan *Piece
+	peerChan       chan *PeerRequest
+	signalChan     chan int
+	peerSignalChan chan int
+	selectionChan 	chan *Piece
+	nWorker        int
+	lastSelectedPieceIndex int
 }
 
-func NewTorrentDownloader(torrent *Torrent, manager *TorrentManager, peerManager *PeerManager) *Downloader {
+func NewTorrentDownloader(torrent *torrent.Torrent, peerManager *PeerManager) *Downloader {
 
 	downloader := new(Downloader)
 	downloader.torrent = torrent
-	downloader.torrentManager = manager
 	downloader.peerManager = peerManager
 	downloader.SyncOperation = make(chan interfaces.SyncOp)
-	downloader.pendingRequest = make(map[string]*BlockRequest)
+	downloader.blockRequests = &sync.Map{}
 	downloader.ticker = make(chan time.Time)
 	downloader.mutex = new(sync.Mutex)
 	downloader.buildQueue()
+	downloader.nWorker = 5
+	downloader.jobs = make(chan *Piece, downloader.nWorker)
+	downloader.signalChan = make(chan int)
+	downloader.selectionChan = make(chan *Piece)
 	downloader.writer = PieceWriter{
-		metaData:    downloader.torrent.FilesMetadata,
-		pieceLength: torrent.pieceLength,
+		segments:    downloader.torrent.FileSegments,
+		pieceLength: torrent.PieceLength,
 	}
 	downloader.mode = sequential
 	return downloader
@@ -85,30 +97,32 @@ func NewTorrentDownloader(torrent *Torrent, manager *TorrentManager, peerManager
 	creates all the piece struct and push them to a priority queue so they can selected one by one
 */
 func (downloader *Downloader) buildQueue() {
-	downloader.nPiece = int(math.Ceil(float64(downloader.torrent.FileLength) / float64(downloader.torrent.pieceLength)))
+	downloader.nPiece = int(math.Ceil(float64(downloader.torrent.Length) / float64(downloader.torrent.PieceLength)))
+
 	downloader.queue = new(downloadQueue)
 
-	log.Printf("file length %v, pieceLength %v, n pieces %v", downloader.torrent.FileLength, downloader.torrent.pieceLength, downloader.torrent.nPiece)
+	log.Printf(":) file length %v, pieceLength %v, n pieces %v", downloader.torrent.Length, downloader.torrent.PieceLength, downloader.nPiece)
 
 	downloader.Pieces = make([]*Piece, downloader.nPiece)
 	for i := range downloader.Pieces {
-		pieceLen := downloader.torrent.pieceLength
+		pieceLength := downloader.torrent.PieceLength
 
-		startIndex := i * downloader.torrent.pieceLength
-		currentTotalLength := startIndex + pieceLen
+		startIndex := i * downloader.torrent.PieceLength
+		currentTotalLength := startIndex + pieceLength
 
-		if currentTotalLength > downloader.torrent.FileLength {
-			pieceLen = currentTotalLength % downloader.torrent.FileLength
+		if currentTotalLength > downloader.torrent.Length {
+			pieceLength = downloader.torrent.Length - startIndex
 		}
 
-		downloader.Pieces[i] = NewPiece(i, downloader.torrent.pieceLength, pieceLen, notStarted)
+		downloader.Pieces[i] = NewPiece(i, downloader.torrent.PieceLength, pieceLength, notStarted)
+
 		downloader.queue.Push(downloader.Pieces[i])
 	}
 	heap.Init(downloader.queue)
 
-
 	bitfieldLen := int(math.Ceil(float64(downloader.nPiece) / 8))
 
+	log.Debugf("#pieces %v, bitfieldLen %v", len(downloader.Pieces), bitfieldLen)
 	downloader.bitfield = make([]byte, bitfieldLen)
 
 }
@@ -119,115 +133,94 @@ func (downloader *Downloader) buildQueue() {
 func (downloader *Downloader) Start(ctx context.Context) {
 
 	// selects a before calling the download()
-	downloader.torrentManager.SyncOperation <- func() {
 
-		piece, err := downloader.selectPiece()
-		if err != nil {
-			return
-		}
+	go downloader.download(ctx)
+	go downloader.startWorker(ctx)
 
-		downloader.selectedPiece = piece
-
-		downloader.writer.setNewPiece(downloader.selectedPiece.pieceLength, downloader.selectedPiece.PieceIndex)
-	}
-
-	// sends a signal through the ticker channel to fire download()
-	go func() {
-		downloader.ticker <- time.Now()
-	}()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-downloader.ticker:
-
-
-			downloader.download(ctx)
-
-			time.AfterFunc(time.Millisecond*250, func() {
-				downloader.ticker <- time.Now()
-			})
-
-			//time.Sleep(time.Millisecond*2000)
-			// this basically calls the download method after a certain amount of time
-
-		}
-	}
 }
 
 /*
 	Sends block request to peers. and resends block requests that have not been fulfilled by peers
 */
 
-func (downloader *Downloader) download(ctx context.Context) {
-	var err error
-	var peer *Peer
-
-	for _, request := range downloader.pendingRequest {
-
-		if request.timedOut() || request.hasNoProvider() {
-
-			if peer == nil || !peer.isAvailable(request.Id) {
-				peer, err = downloader.peerManager.GetAvailablePeer(request.Id,downloader.selectedPiece.PieceIndex)
-				if err != nil {
+func (downloader *Downloader) startWorker(ctx context.Context) {
+	i := 0
+	for i < downloader.nWorker {
+		go func(ctx2 context.Context, i int) {
+			for {
+				select {
+				case <-ctx2.Done():
 					return
+				case piece := <-downloader.jobs:
+
+					peerRequest := &PeerRequest{
+						pieceIndex: piece.PieceIndex,
+						response: make(chan *Peer),
+					}
+
+					log.Infof("requesting piece....")
+
+
+					downloader.peerManager.peerChan <- peerRequest
+					peer := <- peerRequest.response
+					close(peerRequest.response)
+					log.Infof("receive peer: id %v",peer.id)
+					err := piece.download(peer)
+					if err != nil {
+						return 
+					}
+					atomic.StoreInt64(&peer.IsFree,0)
+
+					downloader.peerManager.peerAlert.L.Lock()
+					downloader.peerManager.peerAlert.Signal()
+					downloader.peerManager.peerAlert.L.Unlock()
+
+
+					log.Infof("worker %v, just downloaded a piece : %v", i,piece.PieceIndex)
+
+					downloader.signalChan <- i
 				}
+
 			}
 
-			downloader.resolveRequest(request, timeout)
-
-			downloader.sendRequest(peer, request)
-		}
+		}(ctx, i)
+		i++
 	}
+	i = 0
 
-	// sending fresh requests
+	for i < downloader.nWorker {
 
-	requests := downloader.selectedPiece.getNextRequest(maxPendingRequest - len(downloader.pendingRequest))
+		go func(workerIndex int) {
+			downloader.signalChan <- workerIndex
+		}(i)
 
-	log.Debugf("retrieve %v reqs", len(requests))
-
-	for i, request := range requests {
-
-		log.Debugf("%v- request id: %v", i,request.Id)
-
-		if peer == nil || !peer.isAvailable(request.Id) {
-
-			//if the current peer is not available we try to select another peer
-			peer, err = downloader.peerManager.GetAvailablePeer(request.Id,downloader.selectedPiece.PieceIndex)
-
-			if err != nil {
-				// if we still can't find a peer, we still add the request to to the pending requests map,  hasNoProvider() will return true, the next time at the next iteration fo the loop
-				downloader.pendingRequest[request.Id] = request
-				continue
-			}
-		}
-		downloader.sendRequest(peer, request)
-
+		i++
 	}
 
 }
 
-/*
-	Sends  pieceRequests to a Peer
-*/
-func (downloader *Downloader) sendRequest(peer *Peer, pieceRequest ...*BlockRequest) {
+func (downloader *Downloader) download(ctx context.Context) {
 
-	for i, request := range pieceRequest {
-		log.Debugf("sending piece req to %v, requestID %v",request.BeginIndex,request.Id)
-		_, err := peer.SendMsg(request.Marshal())
-
-		if err != nil {
-			log.Fatal(err)
+	for {
+		select {
+		case <-ctx.Done():
 			return
+		case i := <-downloader.signalChan:
+			piece, _ := downloader.selectPiece()
+			log.Infof("received signal from worker %v", i)
+			downloader.jobs <- piece
+
 		}
 
-		// each request must be completed in at least requestTimeOut
-		request.TimeStamp = time.Now().Add(requestTimeOut * time.Duration(int64(i)*time.Nanosecond.Nanoseconds()))
-		request.Providers = append(request.Providers, peer)
-		downloader.pendingRequest[request.Id] = request
 	}
+}
 
+func (downloader *Downloader) stopDownloading() {
+	close(downloader.jobs)
+}
+
+func (downloader *Downloader) putBlock(msg PieceMsg){
+	downloader.Pieces[msg.PieceIndex].putPiece(msg)
 }
 
 /*
@@ -248,7 +241,6 @@ func (downloader *Downloader) updatePiecePriority(peer *Peer) {
 */
 func (downloader *Downloader) selectPiece() (*Piece, error) {
 
-
 	var index int
 	var selectedPiece *Piece
 	if downloader.mode == random {
@@ -264,17 +256,12 @@ func (downloader *Downloader) selectPiece() (*Piece, error) {
 		}
 		return selectedPiece, nil
 	} else {
-		if downloader.selectedPiece == nil {
-			index = 0
-		} else {
-			index = downloader.selectedPiece.PieceIndex + 1
-		}
 
 
+		downloader.selectedPiece = downloader.Pieces[downloader.lastSelectedPieceIndex]
+		downloader.lastSelectedPieceIndex++
 
-		downloader.selectedPiece = downloader.Pieces[index]
 		return downloader.selectedPiece, nil
-
 	}
 	selectedPiece, err := downloader.queue.RemoveAt(index, downloader.mutex)
 
@@ -283,66 +270,5 @@ func (downloader *Downloader) selectPiece() (*Piece, error) {
 		return nil, err
 	}
 	return selectedPiece, err
-
-}
-
-func (downloader *Downloader) PutPiece(msg PieceMsg) {
-	blocKReqId := getRequestId(msg.PieceIndex, msg.BeginIndex)
-	msg.GetPeer().resolvedRequest(blocKReqId)
-
-
-	if !downloader.selectedPiece.hasSubPiece(msg.BeginIndex) {
-		log.Infof("adding block.. start index %v, payload len %v; sent by %v",msg.BeginIndex,len(msg.Payload), msg.GetPeer().GetId())
-
-		isComplete := downloader.writer.writeToBuffer(msg.Payload, msg.BeginIndex)
-
-		downloader.resolveRequest(downloader.pendingRequest[blocKReqId], fulfilled)
-
-		if isComplete {
-
-			log.Infof("piece %v is complete",downloader.selectedPiece.PieceIndex)
-
-			err := downloader.writer.writePiece()
-			if err != nil {
-				os.Exit(233993)
-				return
-			}
-
-			downloader.torrentManager.SyncOperation <- func() {
-
-				log.Debugf("selecting new piece....")
-				piece, err := downloader.selectPiece()
-				if err != nil {
-					return
-				}
-
-				downloader.writer.setNewPiece(piece.pieceLength, piece.PieceIndex)
-				downloader.selectedPiece = piece
-				log.Debugf("selected new piece: id %v", downloader.selectedPiece.PieceIndex)
-
-			}
-
-		}
-	} else {
-
-		log.Debugf("already have piece: index %v, begin index %v", downloader.selectedPiece.PieceIndex,msg.BeginIndex)
-	}
-
-}
-
-func (downloader *Downloader) resolveRequest(blockRequest *BlockRequest, action int) {
-	atomic.StoreInt64(&blockRequest.state, int64(action))
-
-	if action == fulfilled {
-		log.Debugf("request %v, has been fulffiled", blockRequest.Id)
-		downloader.selectedPiece.UpdateBitfield(blockRequest.BeginIndex)
-		blockRequest.Providers = blockRequest.Providers[len(blockRequest.Providers):]
-
-	}else if action == timeout{
-		log.Debugf("request %v, has been timedout", blockRequest.Id)
-
-	}
-
-	delete(downloader.pendingRequest, blockRequest.Id)
 
 }
