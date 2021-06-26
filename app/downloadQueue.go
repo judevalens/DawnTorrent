@@ -21,8 +21,8 @@ func (p *downloadQueue) RemoveAt(i int,mutex *sync.Mutex) (*Piece, error) {
 	return item.(*Piece), nil
 }
 
-func (p downloadQueue) Len() int {
-	return len(p)
+func (p *downloadQueue) Len() int {
+	return len(*p)
 }
 
 func (p downloadQueue) Less(i, j int) bool {

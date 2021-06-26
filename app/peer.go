@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-const maxPendingRequestPerPeer = 5
+const maxPiecePerPeer = 3
 
 type Peer struct {
 	ip                              string
@@ -44,7 +44,7 @@ func (peer *Peer) SetInterestPoint(i int) {
 }
 
 func (peer *Peer) isAvailable(pieceIndex int) bool {
-	if peer.isChocking || !peer.HasPiece(pieceIndex) || atomic.LoadInt64(&peer.IsFree) == 1  {
+	if peer.isChocking || !peer.HasPiece(pieceIndex) || atomic.LoadInt64(&peer.IsFree) == maxPiecePerPeer {
 		return false
 	}
 	return true

@@ -86,7 +86,7 @@ func (manager *PeerManager) HandleMsgStream(ctx context.Context, peer *Peer) err
 		}
 
 
-		log.Infof("received new msg from : %v, msg id: %v", peer.id, msg.getId())
+		log.Debugf("received new msg from : %v, msg id: %v", peer.id, msg.getId())
 
 		if err != nil {
 			os.Exit(23)
@@ -128,40 +128,38 @@ func (manager *PeerManager) AddNewPeer(peers ...interfaces.PeerI) {
 func (manager *PeerManager) GetAvailablePeer(ctx context.Context)  {
 
 	for {
-		log.Printf("going to select.....")
+		log.Debugf("going to select.....")
 		select {
-		case <-ctx.Done():
-			return
 		case request := <-manager.peerChan:
 			var selectedPeer *Peer
 			for  {
 				manager.peerAlert.L.Lock()
-				log.Printf("received new req, n %v",manager.nActiveConnection)
+				log.Debugf("received new req, n %v",manager.nActiveConnection)
 
 				manager.activePeers.Range(func(key, value interface{}) bool {
-					log.Printf("ranging.....")
+					log.Debugf("ranging.....")
 					peer := value.(*Peer)
 					if peer.isAvailable(request.pieceIndex) {
-						log.Printf("peer is available")
-						atomic.StoreInt64(&peer.IsFree,1)
+						log.Debugf("peer is available")
+						atomic.AddInt64(&peer.IsFree,1)
 						//	request.response <- peer
-						log.Printf("sent peer")
+						log.Debugf("sent peer")
 
 						selectedPeer = peer
 						return false
 					}else{
-						log.Printf("peer is not available, isFree %v",atomic.LoadInt64(&peer.IsFree))
+						log.Debugf("peer is not available, isFree %v",atomic.LoadInt64(&peer.IsFree))
 					}
 					return true
 				})
 
 				if selectedPeer != nil {
 					request.response <- selectedPeer
-					log.Print("breaking loop")
+					log.Debugf("breaking loop")
 					 manager.peerAlert.L.Unlock()
 					break
 				}
-					log.Printf("locking thread")
+					log.Debugf("locking thread")
 					manager.peerAlert.Wait()
 					manager.peerAlert.L.Unlock()
 			}

@@ -154,6 +154,13 @@ type UnInterestedMsg struct {
 	TorrentMsg
 }
 
+func (msg InterestedMsg) Marshal() []byte {
+	return bytes.Join([][]byte{
+		utils.IntToByte(defaultMsgLen,4),
+		utils.IntToByte(InterestedMsgId,1),
+	},[]byte{})
+}
+
 func (msg UnInterestedMsg) handleMsg(manager *TorrentManager) {
 	manager.HandleUnInterestedMsg(msg)
 

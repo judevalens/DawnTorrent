@@ -57,9 +57,10 @@ func NewTorrentManager(torrentPath string) *TorrentManager {
 	manager := new(TorrentManager)
 	manager.Torrent, _ = torrent.CreateNewTorrent(torrentPath)
 	manager.MsgChan = make(chan TorrentMsg,100)
+	manager.stateChan = make(chan int, 1)
 	manager.SyncOperation = make(chan interfaces.SyncOp)
 	manager.PeerManager = newPeerManager(manager.MsgChan, manager.Torrent.InfoHashHex,manager.Torrent.InfoHash)
-	manager.downloader = NewTorrentDownloader(manager.Torrent,manager.PeerManager)
+	manager.downloader = NewTorrentDownloader(manager.Torrent,manager.PeerManager,manager.stateChan)
 	newScrapper, err := tracker.NewAnnouncer(manager.Torrent.Announce, manager.Torrent.InfoHash,manager,manager.PeerManager)
 
 	if err != nil{
@@ -70,7 +71,6 @@ func NewTorrentManager(torrentPath string) *TorrentManager {
 	manager.torrentState = interfaces.StopTorrent
 	manager.myState = &StoppedStated{manager: manager}
 
-	manager.stateChan = make(chan int, 1)
 
 	return manager
 }
@@ -150,7 +150,8 @@ func (manager *TorrentManager) Init() {
 		case interfaces.StopTorrent:
 			manager.myState.stop()
 		case interfaces.CompleteTorrent:
-			close(manager.stateChan)
+			log.Printf("torrent is completed")
+			manager.myState.stop()
 		}
 	}
 

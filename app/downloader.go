@@ -6,6 +6,7 @@ import (
 	"container/heap"
 	"context"
 	"errors"
+	"fmt"
 	log "github.com/sirupsen/logrus"
 	"math"
 	"math/rand"
@@ -69,9 +70,12 @@ type Downloader struct {
 	selectionChan 	chan *Piece
 	nWorker        int
 	lastSelectedPieceIndex int
+	totalSelectedPiece int
+	stateChan		chan int
+
 }
 
-func NewTorrentDownloader(torrent *torrent.Torrent, peerManager *PeerManager) *Downloader {
+func NewTorrentDownloader(torrent *torrent.Torrent, peerManager *PeerManager,stateChan chan int) *Downloader {
 
 	downloader := new(Downloader)
 	downloader.torrent = torrent
@@ -81,7 +85,7 @@ func NewTorrentDownloader(torrent *torrent.Torrent, peerManager *PeerManager) *D
 	downloader.ticker = make(chan time.Time)
 	downloader.mutex = new(sync.Mutex)
 	downloader.buildQueue()
-	downloader.nWorker = 5
+	downloader.nWorker = 15
 	downloader.jobs = make(chan *Piece, downloader.nWorker)
 	downloader.signalChan = make(chan int)
 	downloader.selectionChan = make(chan *Piece)
@@ -90,6 +94,8 @@ func NewTorrentDownloader(torrent *torrent.Torrent, peerManager *PeerManager) *D
 		pieceLength: torrent.PieceLength,
 	}
 	downloader.mode = sequential
+	downloader.stateChan = stateChan
+	downloader.totalSelectedPiece = 0
 	return downloader
 }
 
@@ -133,9 +139,10 @@ func (downloader *Downloader) buildQueue() {
 func (downloader *Downloader) Start(ctx context.Context) {
 
 	// selects a before calling the download()
+	workerWaitGroup :=  &sync.WaitGroup{}
 
-	go downloader.download(ctx)
-	go downloader.startWorker(ctx)
+	go downloader.download(ctx,workerWaitGroup)
+	go downloader.startWorker(ctx,workerWaitGroup)
 
 }
 
@@ -143,47 +150,55 @@ func (downloader *Downloader) Start(ctx context.Context) {
 	Sends block request to peers. and resends block requests that have not been fulfilled by peers
 */
 
-func (downloader *Downloader) startWorker(ctx context.Context) {
+func (downloader *Downloader) startWorker(ctx context.Context,workerWaitGroup *sync.WaitGroup) {
 	i := 0
 	for i < downloader.nWorker {
-		go func(ctx2 context.Context, i int) {
+		go func(ctx2 context.Context, workerWaitGroup *sync.WaitGroup, i int) {
+			workerWaitGroup.Add(1)
 			for {
 				select {
 				case <-ctx2.Done():
+					//log.Printf("shutting worker %v down",i)
 					return
 				case piece := <-downloader.jobs:
-
+					if piece == nil{
+						log.Printf("shutting worker %v down 2",i)
+						workerWaitGroup.Done()
+						return
+					}
 					peerRequest := &PeerRequest{
 						pieceIndex: piece.PieceIndex,
 						response: make(chan *Peer),
 					}
 
-					log.Infof("requesting piece....")
+					log.Debug("requesting piece....")
 
 
 					downloader.peerManager.peerChan <- peerRequest
 					peer := <- peerRequest.response
 					close(peerRequest.response)
-					log.Infof("receive peer: id %v",peer.id)
+					log.Debugf("receive peer: id %v",peer.id)
 					err := piece.download(peer)
 					if err != nil {
+						log.Fatal(err)
 						return 
 					}
-					atomic.StoreInt64(&peer.IsFree,0)
+					fmt.Printf("peer %v\n",atomic.LoadInt64(&peer.IsFree))
+					atomic.AddInt64(&peer.IsFree,-1)
 
 					downloader.peerManager.peerAlert.L.Lock()
 					downloader.peerManager.peerAlert.Signal()
 					downloader.peerManager.peerAlert.L.Unlock()
 
 
-					log.Infof("worker %v, just downloaded a piece : %v", i,piece.PieceIndex)
+					log.Debugf("worker %v, just downloaded a piece : %v", i,piece.PieceIndex)
 
 					downloader.signalChan <- i
 				}
 
 			}
 
-		}(ctx, i)
+		}(ctx, workerWaitGroup,i)
 		i++
 	}
 	i = 0
@@ -199,15 +214,31 @@ func (downloader *Downloader) startWorker(ctx context.Context) {
 
 }
 
-func (downloader *Downloader) download(ctx context.Context) {
+func (downloader *Downloader) download(ctx context.Context, workerWaitGroup *sync.WaitGroup) {
+
+	sentShutDownSignal := false
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case i := <-downloader.signalChan:
-			piece, _ := downloader.selectPiece()
-			log.Infof("received signal from worker %v", i)
+			piece, err := downloader.selectPiece()
+			if err != nil{
+
+				if !sentShutDownSignal{
+					go func() {
+						workerWaitGroup.Wait()
+						downloader.stateChan <- interfaces.CompleteTorrent
+					}()
+					sentShutDownSignal = true
+				}
+
+				//downloader.stateChan <- interfaces.CompleteTorrent
+				//close(downloader.jobs)
+				//time.Sleep(time.Second*9282)
+			}
+			log.Debugf("received signal from worker %v", i)
 			downloader.jobs <- piece
 
 		}
@@ -241,6 +272,10 @@ func (downloader *Downloader) updatePiecePriority(peer *Peer) {
 */
 func (downloader *Downloader) selectPiece() (*Piece, error) {
 
+	if downloader.totalSelectedPiece >= len(downloader.Pieces){
+		return nil,errors.New("queue is empty")
+	}
+
 	var index int
 	var selectedPiece *Piece
 	if downloader.mode == random {
@@ -257,18 +292,23 @@ func (downloader *Downloader) selectPiece() (*Piece, error) {
 		return selectedPiece, nil
 	} else {
 
-
+		log.Printf("queue len %v", downloader.totalSelectedPiece)
 		downloader.selectedPiece = downloader.Pieces[downloader.lastSelectedPieceIndex]
 		downloader.lastSelectedPieceIndex++
+		downloader.totalSelectedPiece++
 
 		return downloader.selectedPiece, nil
 	}
 	selectedPiece, err := downloader.queue.RemoveAt(index, downloader.mutex)
-
 	downloader.selectedPiece = selectedPiece
 	if err != nil {
 		return nil, err
 	}
 	return selectedPiece, err
+}
+
+
+func (downloader *Downloader) write(ctx context.Context){
+
 
 }

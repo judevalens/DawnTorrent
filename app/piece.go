@@ -150,27 +150,44 @@ func (piece *Piece) buildBitfield() {
 }
 
 func (piece *Piece) download(peer *Peer) error {
-	piece.buildBitfield()
+	piece.buffer = make([]byte,piece.pieceLength)
+
+	_, err := peer.connection.Write(InterestedMsg{
+		header{
+			ID: InterestedMsgId,
+		},
+	}.Marshal())
+	if err != nil {
+		return err
+	}
 	for  piece.downloaded < piece.pieceLength {
 		requests := piece.getNextRequest(maxPendingRequest-piece.nPendingRequest)
 
 		for _, request := range requests {
-			_, err := peer.GetConnection().Write(request.Marshal())
-			piece.nPendingRequest++
-			if err != nil {
-				return err
+
+			//log.Info("sending request ...")
+			_, err2 := peer.GetConnection().Write(request.Marshal())
+			if err2 != nil {
+				return err2
 			}
+				 piece.nPendingRequest++
+
+			
+
 		}
 	}
+
+	log.Infof("completed piece %v", piece.PieceIndex)
 
 	return nil
 }
 
 func (piece *Piece) putPiece(msg PieceMsg){
-	log.Info("putting piece....")
+	log.Debug("putting piece....")
 	if !piece.hasSubPiece(msg.BeginIndex) && piece.downloaded < piece.pieceLength{
-		piece.writeToBuffer(msg.Payload,msg.BeginIndex)
 		piece.nPendingRequest--
+		piece.writeToBuffer(msg.Payload,msg.BeginIndex)
+
 	}
 }
 

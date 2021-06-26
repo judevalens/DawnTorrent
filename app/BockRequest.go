@@ -7,7 +7,7 @@ import (
 
 const (
 	requestTimeOut    = time.Millisecond * 10
-	maxPendingRequest = 5
+	maxPendingRequest = 15
 	fulfilled         = iota
 	timeout           = iota
 	unfulfilled       = iota
