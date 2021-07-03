@@ -1,4 +1,4 @@
-package app
+package core
 
 import (
 	"sync/atomic"
@@ -7,7 +7,7 @@ import (
 
 const (
 	requestTimeOut    = time.Millisecond * 10
-	maxPendingRequest = 15
+	maxPendingRequest = 10
 	fulfilled         = iota
 	timeout           = iota
 	unfulfilled       = iota

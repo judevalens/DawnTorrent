@@ -1,8 +1,8 @@
-package app
+package core
 
 import (
-	torrent2 "DawnTorrent/app/torrent"
-	"DawnTorrent/app/tracker"
+	torrent2 "DawnTorrent/core/torrent"
+	"DawnTorrent/core/tracker"
 	"context"
 	"github.com/stretchr/testify/assert"
 	"strconv"

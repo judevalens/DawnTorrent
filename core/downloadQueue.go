@@ -1,4 +1,4 @@
-package app
+package core
 
 import (
 	"container/heap"
@@ -7,51 +7,58 @@ import (
 	"sync"
 )
 
-type downloadQueue []*Piece
+type downloadQueue struct {
+	queue []*Piece
+	mutex *sync.Mutex
+}
 
-func (p *downloadQueue) RemoveAt(i int,mutex *sync.Mutex) (*Piece, error) {
-	mutex.Lock()
-	if i > len(*p) {
+func (p *downloadQueue) RemoveAt(i int) (*Piece, error) {
+	if i > len(p.queue) {
 		log.Fatal(2323)
 		return nil, errors.New("i > len(x)")
 	}
 	item := heap.Remove(p,i)
 
-	mutex.Unlock()
 	return item.(*Piece), nil
 }
 
 func (p *downloadQueue) Len() int {
-	return len(*p)
+	return len(p.queue)
 }
 
 func (p downloadQueue) Less(i, j int) bool {
-	return p[i].Availability < p[j].Availability
+	return p.queue[i].Availability < p.queue[j].Availability
 }
 
 func (p downloadQueue) Swap(i, j int) {
 
-	p[i], p[j] = p[j], p[i]
-	p[i].QueueIndex = i
-	p[j].QueueIndex = j
+	p.queue[i], p.queue[j] = p.queue[j], p.queue[i]
+	p.queue[i].QueueIndex = i
+	p.queue[j].QueueIndex = j
 }
 
 func (p *downloadQueue) Push(x interface{}) {
+	p.mutex.Lock()
 	piece := x.(*Piece)
-	piece.QueueIndex = len(*p)
-	*p = append(*p, piece)
+	piece.QueueIndex = len(p.queue)
+	p.queue = append(p.queue, piece)
+	p.fixQueue(piece.QueueIndex)
+	p.mutex.Unlock()
+
 }
 
 func (p *downloadQueue) Pop() interface{} {
-	l := len(*p)
+	p.mutex.Lock()
+	l := len(p.queue)
 	if l == 0 {
 		return nil
 	}
-	old := *p
+	old := p.queue
 	item := old[l-1]
 	old[l-1] = nil
 	item.QueueIndex = -1
-	*p = old[0 : l-1]
+	p.queue = old[0 : l-1]
+	p.mutex.Unlock()
 	return item
 }
 /*

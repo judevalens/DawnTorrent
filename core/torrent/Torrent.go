@@ -7,6 +7,7 @@ import (
 	"github.com/jackpal/bencode-go"
 	"github.com/sirupsen/logrus"
 	"io/ioutil"
+	"path/filepath"
 	"strings"
 )
 
@@ -41,6 +42,10 @@ type MultipleTorrent struct {
 	Info MultipleInfo `bencode:"info"`
 }
 
+type Info interface {
+
+}
+
 type SingleInfo struct {
 	PieceLength	int `bencode:"piece length"`
 	Pieces string `bencode:"pieces"`
@@ -64,10 +69,26 @@ type FileSegment struct {
 	File
 	StartIndex int
 	EndIndex   int
+	parentName string
+	mode int
 }
 
-func (f File) GetPath() string {
-	return f.Path[0]
+func (f FileSegment) GetPath() string {
+
+	filePath := ""
+	if f.mode == multipleMode{
+		filePath = filepath.Join(filePath,f.parentName)
+
+	}
+
+	for _, p := range f.Path {
+		filePath = filepath.Join(filePath,p)
+
+	}
+
+
+
+	return filepath.FromSlash(filePath)
 }
 
 
@@ -152,6 +173,8 @@ func(torrent *Torrent) buildFileSegment()  {
 			}
 
 			fileSegments = append(fileSegments, FileSegment{
+				mode: torrent.FileMode,
+				parentName: torrent.Multiple.Name,
 				StartIndex: startIndex,
 				EndIndex: endIndex,
 				File: file,
@@ -163,6 +186,8 @@ func(torrent *Torrent) buildFileSegment()  {
 		}
 	} else {
 		fileSegments = append(fileSegments,  FileSegment{
+			mode: torrent.FileMode,
+			parentName: torrent.SingleInfo.Name,
 			StartIndex: 0,
 			EndIndex: torrent.SingleInfo.Length,
 			File: File{

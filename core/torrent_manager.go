@@ -1,8 +1,9 @@
-package app
+package core
 
 import (
-	"DawnTorrent/app/torrent"
-	"DawnTorrent/app/tracker"
+	"DawnTorrent/core/state"
+	"DawnTorrent/core/torrent"
+	"DawnTorrent/core/tracker"
 	"DawnTorrent/interfaces"
 	"context"
 	log "github.com/sirupsen/logrus"
@@ -23,22 +24,25 @@ type torrentManagerStateI interface {
 }
 
 type TorrentManager struct {
+	Id              string
 	Torrent         *torrent.Torrent
 	PeerManager     *PeerManager
-	stopMsgPipeLine chan interface{}
 	MsgChan         chan TorrentMsg
-	torrentState    int
 	Uploaded        int
 	TotalDownloaded int
 	Left            int
 	stateChan       chan int
-	stateLock       *sync.Mutex
 	scrapper        *tracker.Announcer
 	state           int
 	myState         torrentManagerStateI
 	downloader      *Downloader
-	SyncOperation   chan interfaces.SyncOp
+	subscribers 	[]state.Subscriber
+}
 
+func (manager *TorrentManager) notifySubs(){
+	for _, subscriber := range manager.subscribers {
+		subscriber.UpdateState(manager)
+	}
 }
 
 func (manager *TorrentManager) GetSyncChan() chan interfaces.SyncOp {
@@ -50,34 +54,39 @@ func (manager *TorrentManager) GetAnnounceList() []string {
 }
 
 func (manager *TorrentManager) GetStats() (int, int, int) {
-	return manager.TotalDownloaded,manager.Uploaded,manager.Left
+	return manager.TotalDownloaded, manager.Uploaded, manager.Left
 }
 
-func NewTorrentManager(torrentPath string) *TorrentManager {
+func NewTorrentManager(torrentPath string) (*TorrentManager, error) {
+	var err error
 	manager := new(TorrentManager)
-	manager.Torrent, _ = torrent.CreateNewTorrent(torrentPath)
-	manager.MsgChan = make(chan TorrentMsg,100)
-	manager.stateChan = make(chan int, 1)
-	manager.SyncOperation = make(chan interfaces.SyncOp)
-	manager.PeerManager = newPeerManager(manager.MsgChan, manager.Torrent.InfoHashHex,manager.Torrent.InfoHash)
-	manager.downloader = NewTorrentDownloader(manager.Torrent,manager.PeerManager,manager.stateChan)
-	newScrapper, err := tracker.NewAnnouncer(manager.Torrent.Announce, manager.Torrent.InfoHash,manager,manager.PeerManager)
+	manager.Torrent, err = torrent.CreateNewTorrent(torrentPath)
 
-	if err != nil{
+	if err != nil {
+		return nil, err
+	}
+	manager.Id = manager.Torrent.InfoHashHex
+
+	manager.MsgChan = make(chan TorrentMsg, 100)
+	manager.stateChan = make(chan int, 1)
+	manager.PeerManager = newPeerManager(manager.MsgChan, manager.Torrent.InfoHashHex, manager.Torrent.InfoHash)
+	manager.downloader = NewTorrentDownloader(manager.Torrent, manager.PeerManager, manager.stateChan)
+	newScrapper, err := tracker.NewAnnouncer(manager.Torrent.Announce, manager.Torrent.InfoHash, manager, manager.PeerManager)
+
+	if err != nil {
 		log.Fatal(err)
 	}
 	manager.scrapper = newScrapper
 
-	manager.torrentState = interfaces.StopTorrent
 	manager.myState = &StoppedStated{manager: manager}
 
-
-	return manager
+	return manager, nil
 }
 
 type startedStated struct {
-	manager *TorrentManager
-	cancelRoutines context.CancelFunc
+	manager               *TorrentManager
+	cancelDownloadRoutine context.CancelFunc
+	wait                  *sync.WaitGroup
 }
 
 func (state startedStated) getState() int {
@@ -90,7 +99,10 @@ func (state startedStated) start() {
 }
 
 func (state startedStated) stop() {
-	state.cancelRoutines()
+	state.cancelDownloadRoutine()
+
+	state.wait.Wait()
+
 	state.manager.myState = &StoppedStated{manager: state.manager}
 }
 
@@ -108,19 +120,16 @@ func (state StoppedStated) getState() int {
 
 func (state StoppedStated) start() {
 
-	ctx, cancelRoutine := context.WithCancel(context.TODO())
+	downloaderCtx, cancelRoutine := context.WithCancel(context.TODO())
+	scrapperCtx, _ := context.WithCancel(context.TODO())
+	msgRouterCtx, _ := context.WithCancel(context.TODO())
+	waitGroup := &sync.WaitGroup{}
+	waitGroup.Add(1)
 
-
-
-	go state.manager.msgRouter(ctx)
-	go state.manager.receiveOperation(ctx)
-	go state.manager.PeerManager.receiveOperation(ctx)
-	go state.manager.scrapper.StartScrapper(ctx)
-	go state.manager.downloader.Start(ctx)
-	go state.manager.PeerManager.GetAvailablePeer(ctx)
-	state.manager.myState = &startedStated{manager: state.manager,cancelRoutines: cancelRoutine}
-
-
+	go state.manager.msgRouter(msgRouterCtx)
+	go state.manager.scrapper.StartScrapper(scrapperCtx)
+	go state.manager.downloader.Start(downloaderCtx, waitGroup)
+	state.manager.myState = &startedStated{manager: state.manager, cancelDownloadRoutine: cancelRoutine, wait: waitGroup}
 
 	log.Printf("new state: %v", reflect.TypeOf(state.manager.myState))
 }
@@ -136,7 +145,7 @@ func (state StoppedStated) complete() {
 func (manager *TorrentManager) SetState(state int) {
 	manager.stateChan <- state
 }
-func (manager *TorrentManager) GetState() int{
+func (manager *TorrentManager) GetState() int {
 	return manager.myState.getState()
 }
 
@@ -150,8 +159,9 @@ func (manager *TorrentManager) Init() {
 		case interfaces.StopTorrent:
 			manager.myState.stop()
 		case interfaces.CompleteTorrent:
-			log.Printf("torrent is completed")
 			manager.myState.stop()
+			log.Printf("torrent is completed")
+
 		}
 	}
 
@@ -166,25 +176,9 @@ func (manager *TorrentManager) msgRouter(ctx context.Context) {
 	for {
 
 		select {
-		case <-ctx.Done():
-			return
 		case msg := <-manager.MsgChan:
 			log.Debugf("routing msg..., msgID : %v", msg.getId())
 			msg.handleMsg(manager)
-		}
-
-	}
-}
-
-func (manager *TorrentManager) receiveOperation(ctx context.Context) {
-
-	for {
-
-		select {
-		case <-ctx.Done():
-			return
-		case operation := <-manager.SyncOperation:
-			operation()
 		}
 
 	}

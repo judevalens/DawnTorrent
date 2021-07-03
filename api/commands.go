@@ -1,4 +1,4 @@
-package main
+package api
 
 const (
 	AddTorrent = 0

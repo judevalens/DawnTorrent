@@ -1,4 +1,4 @@
-package app
+package core
 
 import (
 	"DawnTorrent/interfaces"
@@ -9,31 +9,30 @@ import (
 	"sync/atomic"
 )
 
-
+const BlockLen = 16384
 
 type Piece struct {
-	pieceLength     int
-	downloaded      int
-	SubPieceLen     int
-	PieceIndex      int
-	State           int
-	buffer          []byte
-	QueueIndex      int
-	Availability    int64
-	subPieceMask    []byte
-	pieceStartIndex int
-	pieceEndIndex   int
-	position        []int
+	pieceLength       int
+	downloaded        int
+	SubPieceLen       int
+	PieceIndex        int
+	State             int
+	buffer            []byte
+	QueueIndex        int
+	Availability      int64
+	subPieceMask      []byte
+	pieceStartIndex   int
+	pieceEndIndex     int
+	position          []int
 	mutex             *sync.Mutex
 	owners            map[string]interfaces.PeerI
 	mask              int
 	nSubPiece         int
 	AvailabilityIndex int
-	requestIndex 		int
-	endOfPiece 			bool
-	nPendingRequest	int
-	writer PieceWriter
-	blockChan chan PieceMsg
+	requestIndex      int
+	endOfPiece        bool
+	nPendingRequest   int
+	blockChan         chan PieceMsg
 }
 
 func (piece Piece) getBlockRequestInfo(index int) (int, int, bool) {
@@ -43,10 +42,13 @@ func (piece Piece) getBlockRequestInfo(index int) (int, int, bool) {
 	currentTotalLength := BlockLen + startIndex
 
 	if currentTotalLength > piece.pieceLength {
-		currentTotalLength = startIndex + (piece.pieceLength%startIndex)
+		lastBlockLength := piece.pieceLength % startIndex
+		currentTotalLength = startIndex + lastBlockLength
+		log.Printf("real length %v\n", currentTotalLength)
+		return startIndex, lastBlockLength, currentTotalLength == piece.pieceLength
 	}
 
-	return startIndex, BlockLen, currentTotalLength==piece.pieceLength
+	return startIndex, BlockLen, currentTotalLength == piece.pieceLength
 }
 
 func (piece *Piece) getNextRequest(nRequest int) []*BlockRequest {
@@ -56,7 +58,7 @@ func (piece *Piece) getNextRequest(nRequest int) []*BlockRequest {
 		return requests
 	}
 
-	for i := piece.requestIndex; i < piece.requestIndex + nRequest; i++ {
+	for i := piece.requestIndex; i < piece.requestIndex+nRequest; i++ {
 
 		startIndex, currentSubPieceLength, endOfPiece := piece.getBlockRequestInfo(i)
 
@@ -108,7 +110,7 @@ func (piece Piece) updateAvailability(action int, peer interfaces.PeerI) {
 
 			// will be used to determine if a peer is interesting
 			if piece.State == notStarted {
-				peer.SetInterestPoint(peer.GetInterestPoint()+1)
+				peer.SetInterestPoint(peer.GetInterestPoint() + 1)
 			}
 
 		} else {
@@ -138,9 +140,9 @@ func NewPiece(PieceIndex, standardPieceLength, pieceLength int, status int) *Pie
 	newPiece.owners = make(map[string]interfaces.PeerI)
 	newPiece.mutex = new(sync.Mutex)
 
-	maskSize  := int(math.Ceil(float64(newPiece.pieceLength) / BlockLen))
+	maskSize := int(math.Ceil(float64(newPiece.pieceLength) / BlockLen))
 
-	newPiece.subPieceMask= make([]byte,maskSize)
+	newPiece.subPieceMask = make([]byte, maskSize)
 	return newPiece
 
 }
@@ -149,8 +151,14 @@ func (piece *Piece) buildBitfield() {
 	piece.subPieceMask = make([]byte, int(math.Ceil(float64(piece.nSubPiece)/float64(8))))
 }
 
+func (piece *Piece) reset() {
+	piece.downloaded = 0
+	piece.buffer = nil
+	piece.requestIndex = 0
+}
+
 func (piece *Piece) download(peer *Peer) error {
-	piece.buffer = make([]byte,piece.pieceLength)
+	piece.buffer = make([]byte, piece.pieceLength)
 
 	_, err := peer.connection.Write(InterestedMsg{
 		header{
@@ -158,22 +166,21 @@ func (piece *Piece) download(peer *Peer) error {
 		},
 	}.Marshal())
 	if err != nil {
+		piece.reset()
 		return err
 	}
-	for  piece.downloaded < piece.pieceLength {
-		requests := piece.getNextRequest(maxPendingRequest-piece.nPendingRequest)
+	for piece.downloaded < piece.pieceLength {
+		requests := piece.getNextRequest(maxPendingRequest - piece.nPendingRequest)
 
 		for _, request := range requests {
 
 			//log.Info("sending request ...")
 			_, err2 := peer.GetConnection().Write(request.Marshal())
 			if err2 != nil {
+				piece.reset()
 				return err2
 			}
-				 piece.nPendingRequest++
-
-			
-
+			piece.nPendingRequest++
 		}
 	}
 
@@ -182,16 +189,14 @@ func (piece *Piece) download(peer *Peer) error {
 	return nil
 }
 
-func (piece *Piece) putPiece(msg PieceMsg){
+func (piece *Piece) putPiece(msg PieceMsg) {
 	log.Debug("putting piece....")
-	if !piece.hasSubPiece(msg.BeginIndex) && piece.downloaded < piece.pieceLength{
-		piece.nPendingRequest--
-		piece.writeToBuffer(msg.Payload,msg.BeginIndex)
 
+	if !piece.hasSubPiece(msg.BeginIndex) && piece.downloaded < piece.pieceLength {
+		piece.nPendingRequest--
+		piece.writeToBuffer(msg.Payload, msg.BeginIndex)
 	}
 }
-
-
 
 func (piece *Piece) writeToBuffer(data []byte, startIndex int) bool {
 	if piece.downloaded < piece.pieceLength {
@@ -203,20 +208,20 @@ func (piece *Piece) writeToBuffer(data []byte, startIndex int) bool {
 }
 
 func (piece *Piece) hasSubPiece(startIndex int) bool {
-	subPieceIndex := startIndex/BlockLen
+	subPieceIndex := startIndex / BlockLen
 
 	byteIndex := subPieceIndex / 8
 
-	bitIndex := 7 - (subPieceIndex%8)
+	bitIndex := 7 - (subPieceIndex % 8)
 
 	return utils.IsBitOn(piece.subPieceMask[byteIndex], bitIndex)
 }
 
 func (piece *Piece) UpdateBitfield(startIndex int) {
-	subPieceIndex := startIndex/BlockLen
+	subPieceIndex := startIndex / BlockLen
 
 	byteIndex := subPieceIndex / 8
 
-	bitIndex := 7 - (subPieceIndex%8)
+	bitIndex := 7 - (subPieceIndex % 8)
 	piece.subPieceMask[byteIndex] = utils.BitMask(piece.subPieceMask[byteIndex], 1, bitIndex)
 }

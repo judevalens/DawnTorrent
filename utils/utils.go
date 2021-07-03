@@ -37,10 +37,9 @@ var MyID = GetRandomId(20)
 var KeepAliveDuration, _ = time.ParseDuration("120s")
 
 var homeDir, _ = os.UserHomeDir()
+var TorrentHomeDir = filepath.Join(homeDir + "/DawnTorrent/files")
 
-var TorrentHomeDir = filepath.FromSlash(homeDir + "/DawnTorrent/files")
-
-var SavedTorrentDir = filepath.FromSlash(homeDir + "/DawnTorrent/torrents")
+var SavedTorrentDir = filepath.Join(homeDir + "/DawnTorrent/torrents")
 
 func InitDir()  {
 	if _, err := os.Stat(TorrentHomeDir); os.IsNotExist(err) {

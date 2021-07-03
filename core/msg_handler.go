@@ -1,4 +1,4 @@
-package app
+package core
 
 import "log"
 
@@ -32,9 +32,7 @@ func (manager *TorrentManager) HandleHaveMsg(msg HaveMsg) {
 	manager.PeerManager.peerAlert.Signal()
 
 	// we use the sync channel because we can't update the piece priority pendingRequest concurrently
-	manager.SyncOperation <- func() {
-		manager.downloader.updatePiecePriority(msg.GetPeer())
-	}
+	manager.downloader.updatePiecePriority(msg.GetPeer())
 }
 
 func (manager *TorrentManager) HandleBitFieldMsg(msg BitfieldMsg) {
@@ -42,10 +40,8 @@ func (manager *TorrentManager) HandleBitFieldMsg(msg BitfieldMsg) {
 	peer := msg.GetPeer()
 	peer.SetBitField(msg.Bitfield)
 	manager.PeerManager.peerAlert.Signal()
+	manager.downloader.updatePiecePriority(peer)
 
-	manager.SyncOperation <- func() {
-		manager.downloader.updatePiecePriority(peer)
-	}
 
 }
 

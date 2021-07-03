@@ -1,8 +1,8 @@
 package main
 
 import (
-	"DawnTorrent/app"
-	"DawnTorrent/app/torrent"
+	"DawnTorrent/core"
+	"DawnTorrent/core/torrent"
 	"DawnTorrent/interfaces"
 	"DawnTorrent/utils"
 	"bufio"
@@ -19,7 +19,7 @@ const (
 )
 
 const (
-	clientCommand = 0
+	clientCommand  = 0
 	torrentTorrent = 2
 )
 
@@ -28,19 +28,20 @@ func init() {
 
 	log.SetLevel(log.InfoLevel)
 	log.SetFormatter(&log.TextFormatter{
-		ForceColors: true,
+		ForceColors:   true,
 		FullTimestamp: true,
 	})
 }
 
 func main() {
 
+	//api.StartServer()
 	//done := make(chan bool)
 
 	//c.addTorrent("/home/jude/GolandProjects/DawnTorrent/files/ubuntu-20.04-desktop-amd64.iso.torrent",PeerProtocol.InitTorrentFile_)
 	//c.torrents["1"].Start()
 	utils.InitDir()
-	torrentPath := "files/debian-mac-10.10.0-amd64-netinst.iso.torrent"
+	torrentPath := "files/big-buck-bunny.torrent"
 
 	newTorrent, err := torrent.CreateNewTorrent(torrentPath)
 	if err != nil {
@@ -48,32 +49,27 @@ func main() {
 		return
 	}
 
+	log.Infof("comment: %v\n", newTorrent.Comment)
+	log.Infof("annouce list: %v\n", newTorrent.AnnounceList)
+	log.Infof("info: %v\n", newTorrent.SingleInfo.Name)
+	log.Infof("length : %v\n", newTorrent.SingleInfo.Length)
+	log.Infof("piece length : %v\n", newTorrent.SingleInfo.PieceLength)
+	log.Infof("mode : %v\n", newTorrent.FileMode)
 
-	log.Infof("comment: %v\n",newTorrent.Comment)
-	log.Infof("annouce list: %v\n",newTorrent.AnnounceList)
-	log.Infof("info: %v\n",newTorrent.SingleInfo.Name)
-	log.Infof("length : %v\n",newTorrent.SingleInfo.Length)
-	log.Infof("piece length : %v\n",newTorrent.SingleInfo.PieceLength)
-	log.Infof("mode : %v\n",newTorrent.FileMode)
-
-
-
-
-	 manager1 := app.NewTorrentManager(torrentPath)
+	manager1, _ := core.NewTorrentManager(torrentPath)
 	go manager1.Init()
-	 manager1.SetState(interfaces.StartTorrent)
-
+	manager1.SetState(interfaces.StartTorrent)
 
 	println("non blocking")
 
 	/*
-	wp := JobQueue.NewWorkerPool(15)
+		wp := JobQueue.NewWorkerPool(15)
 
-	wp.Start()
+		wp.Start()
 
 
-	go jobsMaker(wp)
-	go jobsMaker(wp)
+		go jobsMaker(wp)
+		go jobsMaker(wp)
 
 
 	*/
@@ -84,26 +80,20 @@ func main() {
 	for command != "exit" {
 		scanner.Scan()
 		command = scanner.Text()
-		fmt.Printf("%v: %v\n", i,command)
-		state,err := strconv.Atoi(command)
-			if err != nil{
-				log.Printf("err: %v", err)
-				continue
-			}
+		fmt.Printf("%v: %v\n", i, command)
+		state, err := strconv.Atoi(command)
+		if err != nil {
+			log.Printf("err: %v", err)
+			continue
+		}
 
-			_ =state
-			//manager1.SetState(state)
+		_ = state
+		//manager1.SetState(state)
 		i++
 	}
-
 
 	if err := scanner.Err(); err != nil {
 		log.Println(err)
 	}
 
 }
-
-
-
-
-

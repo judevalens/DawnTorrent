@@ -1,4 +1,4 @@
-package app
+package core
 
 import (
 	"DawnTorrent/interfaces"
@@ -15,7 +15,6 @@ import (
 	_ "net"
 	"os"
 	_ "os"
-	"reflect"
 	"strconv"
 	_ "strconv"
 	"sync"
@@ -24,16 +23,12 @@ import (
 
 type PeerManager struct {
 	activePeers *sync.Map
-	peersId     []string
 	nActiveConnection     int
 	maxConnection         int
 	PeerOperationReceiver chan interfaces.Operation
 	msgReceiver           chan TorrentMsg
 	server                *net.TCPListener
-	InfoHashHex           string
 	InfoHash              string
-	selectPeer            *Peer
-	queue                 []*Peer
 	peerChan              chan *PeerRequest
 	peerAlert 			  *sync.Cond
 }
@@ -45,7 +40,6 @@ type PeerRequest struct {
 
 func newPeerManager(msgReceiver chan TorrentMsg, infoHashHex string, infoHash string) *PeerManager {
 	peerManager := new(PeerManager)
-	peerManager.InfoHashHex = infoHashHex
 	peerManager.InfoHash = infoHash
 	peerManager.msgReceiver = msgReceiver
 	peerManager.PeerOperationReceiver = make(chan interfaces.Operation)
@@ -130,6 +124,9 @@ func (manager *PeerManager) GetAvailablePeer(ctx context.Context)  {
 	for {
 		log.Debugf("going to select.....")
 		select {
+		case <- ctx.Done():
+			log.Infof("shutting down peer selector....")
+			return
 		case request := <-manager.peerChan:
 			var selectedPeer *Peer
 			for  {
@@ -358,21 +355,6 @@ func (manager *PeerManager) stopServer() {
 	}
 }
 
-func (manager *PeerManager) receiveOperation(ctx context.Context) {
-	log.Printf("starting peer operation receiver")
-	for {
-
-		select {
-		case <-ctx.Done():
-			log.Printf("stopping peer operation receiver")
-			return
-		case operation := <-manager.PeerOperationReceiver:
-			log.Printf("new operation received: %v", reflect.TypeOf(operation))
-			operation.Execute(ctx)
-		}
-	}
-
-}
 
 func (manager *PeerManager) updateInterest() {
 	manager.activePeers.Range(func(key, value interface{}) bool {
