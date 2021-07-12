@@ -5,6 +5,7 @@ import (
 	"DawnTorrent/core/torrent"
 	"DawnTorrent/core/tracker"
 	"DawnTorrent/interfaces"
+	"DawnTorrent/rpc/torrent_state"
 	"context"
 	log "github.com/sirupsen/logrus"
 	"reflect"
@@ -182,4 +183,16 @@ func (manager *TorrentManager) msgRouter(ctx context.Context) {
 		}
 
 	}
+}
+
+func (manager *TorrentManager) serialize() torrent_state.TorrentState{
+
+	return torrent_state.TorrentState{
+		Infohash: manager.Torrent.InfoHashHex,
+		Torrent: manager.Torrent.Serialize(),
+		Stats: manager.downloader.serialize(),
+		Trackers: manager.scrapper.Serialize(),
+		PeerSwarm: manager.PeerManager.serialize(),
+	}
+
 }

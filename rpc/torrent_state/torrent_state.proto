@@ -1,0 +1,90 @@
+syntax = "proto3";
+
+option go_package = "torrent_state/";
+
+service StateService{
+  rpc AddTorrent(TorrentInfo) returns (TorrentState);
+  rpc RemoveTorrent(TorrentInfo) returns (TorrentState);
+  rpc ControlTorrent(Control) returns (TorrentState);
+  rpc Subscribe(Subscription) returns (stream TorrentState);
+}
+
+message Subscription{
+}
+
+message Control {
+  enum Action{
+    START = 0;
+    STOP = 1;
+    Remove = 2;
+    Add  =3;
+  }
+  Action action = 1;
+  string infohash = 2;
+  string path = 3;
+}
+
+message TorrentInfo {
+  enum torrentMode {
+    Single = 0;
+    Multiple = 1;
+  }
+  torrentMode mode = 6;
+  string path = 1;
+  string infohash = 2;
+  int32 torrentLength = 3;
+  repeated FilePath paths= 7;
+}
+
+message FilePath {
+  int32 length = 1;
+  string path =2;
+}
+
+
+message TorrentState{
+  State torrentState = 1;
+  Stats stats = 6;
+  string infohash = 2;
+  TorrentInfo torrent = 3;
+  repeated Tracker trackers = 4;
+  PeerSwarm peerSwarm = 5;
+  enum State {
+    Stopped = 0;
+    InProgress = 1;
+    Done = 2;
+  }
+}
+
+
+message Stats {
+   bytes bitfield = 4;
+  int32 torrentLength = 3;
+  int32 currentLength = 5;
+  double downloadRate = 6;
+  double uploadRate = 7;
+}
+
+message Tracker {
+  string ip = 1;
+}
+
+message PeerSwarm {
+  int32 nConnectedPeer = 1;
+  repeated Peer peers = 2;
+}
+
+message Peer {
+  string ip = 1;
+  string id = 2;
+  int32 uploadRate =3;
+  int32 downloadRate = 4;
+}
+
+message Ack{
+  int32 code = 1;
+  enum Code {
+    Success = 0;
+    Failure = 1;
+  }
+}

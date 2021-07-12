@@ -12,7 +12,7 @@ import (
 /*
 	writes a chunk of data to a file.
 */
-func  writeToFile(data []byte, filePath string, startIndex int) (int, error) {
+func writeToFile(data []byte, filePath string, startIndex int) (int, error) {
 
 	//create parent dir if it doesnt exist
 	finalPath := filepath.Join(utils.TorrentHomeDir, filePath)
@@ -21,14 +21,13 @@ func  writeToFile(data []byte, filePath string, startIndex int) (int, error) {
 		_ = os.MkdirAll(parentDir, os.ModePerm)
 	}
 
-
 	file, err := os.OpenFile(finalPath, os.O_CREATE|os.O_RDWR, os.ModePerm)
 	if err != nil {
 		return 0, err
 	}
 	nByte, err := file.WriteAt(data, int64(startIndex))
 	if err != nil {
-		log.Panicf("could not write file\n%v",err.Error())
+		log.Panicf("could not write file\n%v", err.Error())
 		return 0, err
 	}
 	return nByte, nil
@@ -37,7 +36,7 @@ func  writeToFile(data []byte, filePath string, startIndex int) (int, error) {
 /*
 	writes a completed piece to disk
 */
-func  writePiece(piece *Piece,segments []torrent.FileSegment) error {
+func writePiece(piece *Piece, segments []torrent.FileSegment) error {
 	/*
 		we must know the index at which to write a piece in a file
 		we have check for boundaries so we can determine if a chunk of data overlaps over multiple files.
@@ -60,7 +59,7 @@ func  writePiece(piece *Piece,segments []torrent.FileSegment) error {
 		/*	case a -> file is inside piece
 			1---|-2----3--|--4
 		*/
-		caseA :=  absStartIndex < metadatum.StartIndex && absEndIndex > metadatum.EndIndex
+		caseA := absStartIndex < metadatum.StartIndex && absEndIndex > metadatum.EndIndex
 
 		/*	case b -> piece overlaps over two files, trying to get first block
 			1--|--2-|---3----4
@@ -71,7 +70,6 @@ func  writePiece(piece *Piece,segments []torrent.FileSegment) error {
 			1---|-2--|--3----4
 		*/
 		caseC := absStartIndex <= metadatum.StartIndex && absEndIndex <= metadatum.EndIndex
-
 
 		if caseA {
 			writeAt = 0
@@ -89,10 +87,9 @@ func  writePiece(piece *Piece,segments []torrent.FileSegment) error {
 			writeAt = 0
 			relativeStartIndex = metadatum.StartIndex - absStartIndex
 			relativeEndIndex = piece.pieceLength
-		}else{
+		} else {
 
-			 continue
-
+			continue
 
 		}
 

@@ -1,6 +1,7 @@
 package torrent
 
 import (
+	"DawnTorrent/rpc/torrent_state"
 	"bytes"
 	"crypto/sha1"
 	"encoding/hex"
@@ -12,26 +13,27 @@ import (
 )
 
 const (
-	singleMode = iota
+	singleMode   = iota
 	multipleMode = iota
 )
 
 type Torrent struct {
-	Announce string `bencode:"announce"`
-	AnnounceList []string `bencode:"announce-list"`
-	CreationDate int `bencode:"creation date"`
-	Comment string `bencode:"comment"`
-	CreatedBy string `bencode:"created by"`
-	Encoding string `bencode:"encoding"`
-	SingleInfo	SingleInfo `bencode:"info"`
-	Multiple	MultipleInfo
-	InfoHashHex	string
-	InfoHash	string
-	FileMode 	int
+	Announce     string     `bencode:"announce"`
+	AnnounceList []string   `bencode:"announce-list"`
+	CreationDate int        `bencode:"creation date"`
+	Comment      string     `bencode:"comment"`
+	CreatedBy    string     `bencode:"created by"`
+	Encoding     string     `bencode:"encoding"`
+	SingleInfo   SingleInfo `bencode:"info"`
+	Multiple     MultipleInfo
+	InfoHashHex  string
+	InfoHash     string
+	FileMode     int
 	FileSegments []FileSegment
-	PieceLength int
-	Length int
-	Pieces string
+	PieceLength  int
+	Length       int
+	Pieces       string
+	serializedState *torrent_state.TorrentInfo
 }
 
 type SingleTorrent struct {
@@ -43,26 +45,25 @@ type MultipleTorrent struct {
 }
 
 type Info interface {
-
 }
 
 type SingleInfo struct {
-	PieceLength	int `bencode:"piece length"`
-	Pieces string `bencode:"pieces"`
-	Length int `bencode:"length"`
-	Name string `bencode:"name"`
+	PieceLength int    `bencode:"piece length"`
+	Pieces      string `bencode:"pieces"`
+	Length      int    `bencode:"length"`
+	Name        string `bencode:"name"`
 }
 
 type MultipleInfo struct {
-	PieceLength	int `bencode:"piece length"`
-	Pieces string `bencode:"pieces"`
-	Name string `bencode:"name"`
-	Files 	[]File `bencode:"files"`
+	PieceLength int    `bencode:"piece length"`
+	Pieces      string `bencode:"pieces"`
+	Name        string `bencode:"name"`
+	Files       []File `bencode:"files"`
 }
 
 type File struct {
-	Length int `bencode:"length"`
-	Path	 []string `bencode:"path"`
+	Length int      `bencode:"length"`
+	Path   []string `bencode:"path"`
 }
 
 type FileSegment struct {
@@ -70,27 +71,24 @@ type FileSegment struct {
 	StartIndex int
 	EndIndex   int
 	parentName string
-	mode int
+	mode       int
 }
 
 func (f FileSegment) GetPath() string {
 
 	filePath := ""
-	if f.mode == multipleMode{
-		filePath = filepath.Join(filePath,f.parentName)
+	if f.mode == multipleMode {
+		filePath = filepath.Join(filePath, f.parentName)
 
 	}
 
 	for _, p := range f.Path {
-		filePath = filepath.Join(filePath,p)
+		filePath = filepath.Join(filePath, p)
 
 	}
 
-
-
 	return filepath.FromSlash(filePath)
 }
-
 
 func CreateNewTorrent(torrentPath string) (*Torrent, error) {
 
@@ -100,7 +98,7 @@ func CreateNewTorrent(torrentPath string) (*Torrent, error) {
 	}
 
 	torrent := &Torrent{}
-	err = bencode.Unmarshal(bytes.NewBuffer(file),torrent)
+	err = bencode.Unmarshal(bytes.NewBuffer(file), torrent)
 
 	if err != nil {
 		return nil, err
@@ -110,8 +108,7 @@ func CreateNewTorrent(torrentPath string) (*Torrent, error) {
 	/// Basically we have to unmarshal the torrent file twice because we have no idea, what the info mode going to be (single or multiple files) :)
 	infoBytes := bytes.NewBuffer([]byte{})
 
-
-	if torrent.SingleInfo.Length != 0{
+	if torrent.SingleInfo.Length != 0 {
 		torrent.FileMode = singleMode
 
 		info := &SingleTorrent{}
@@ -126,8 +123,8 @@ func CreateNewTorrent(torrentPath string) (*Torrent, error) {
 			return nil, err
 		}
 
-		logrus.Infof("hash: \n%v",string((infoBytes.Bytes())))
-	}else {
+		logrus.Infof("hash: \n%v", string(infoBytes.Bytes()))
+	} else {
 		torrent.FileMode = multipleMode
 
 		info := &MultipleTorrent{}
@@ -140,44 +137,42 @@ func CreateNewTorrent(torrentPath string) (*Torrent, error) {
 
 		torrent.Multiple = info.Info
 
-
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	torrent.InfoHash,torrent.InfoHashHex = calculateInfoHash(infoBytes.Bytes())
+	torrent.InfoHash, torrent.InfoHashHex = calculateInfoHash(infoBytes.Bytes())
 
 	torrent.buildFileSegment()
 
+	logrus.Infof("InfoHash %v\nInfoHashhex %v", torrent.InfoHash, strings.ToUpper(torrent.InfoHashHex))
 
-	logrus.Infof("InfoHash %v\nInfoHashhex %v",torrent.InfoHash,strings.ToUpper(torrent.InfoHashHex))
-
-	return torrent,nil
+	return torrent, nil
 }
 
-func(torrent *Torrent) buildFileSegment()  {
-	 fileSegments := make([]FileSegment,0)
-	 fileLength := 0
+func (torrent *Torrent) buildFileSegment() {
+	fileSegments := make([]FileSegment, 0)
+	fileLength := 0
 
 	if torrent.FileMode == multipleMode {
 
 		startIndex := 0
 		endIndex := 0
 		for fileIndex, file := range torrent.Multiple.Files {
-			if fileIndex == 0{
+			if fileIndex == 0 {
 				endIndex = file.Length
-			}else {
+			} else {
 				startIndex = fileSegments[fileIndex-1].EndIndex
 				endIndex = startIndex + file.Length
 			}
 
 			fileSegments = append(fileSegments, FileSegment{
-				mode: torrent.FileMode,
+				mode:       torrent.FileMode,
 				parentName: torrent.Multiple.Name,
 				StartIndex: startIndex,
-				EndIndex: endIndex,
-				File: file,
+				EndIndex:   endIndex,
+				File:       file,
 			})
 
 			fileLength += file.Length
@@ -185,17 +180,16 @@ func(torrent *Torrent) buildFileSegment()  {
 			torrent.Pieces = torrent.Multiple.Pieces
 		}
 	} else {
-		fileSegments = append(fileSegments,  FileSegment{
-			mode: torrent.FileMode,
+		fileSegments = append(fileSegments, FileSegment{
+			mode:       torrent.FileMode,
 			parentName: torrent.SingleInfo.Name,
 			StartIndex: 0,
-			EndIndex: torrent.SingleInfo.Length,
+			EndIndex:   torrent.SingleInfo.Length,
 			File: File{
 				Length: torrent.SingleInfo.Length,
-				Path: []string{torrent.SingleInfo.Name},
+				Path:   []string{torrent.SingleInfo.Name},
 			},
 		})
-
 		fileLength = torrent.SingleInfo.Length
 		torrent.PieceLength = torrent.SingleInfo.PieceLength
 		torrent.Pieces = torrent.SingleInfo.Pieces
@@ -203,6 +197,32 @@ func(torrent *Torrent) buildFileSegment()  {
 
 	torrent.FileSegments = fileSegments
 	torrent.Length = fileLength
+}
+
+func (torrent *Torrent) Serialize() *torrent_state.TorrentInfo {
+	if torrent.serializedState != nil{
+		return torrent.serializedState
+	}
+	mode := torrent_state.TorrentInfo_Single
+	if torrent.FileMode == multipleMode {
+		mode = torrent_state.TorrentInfo_Multiple
+	}
+	paths := make([]*torrent_state.FilePath,len(torrent.FileSegments))
+	for i, segment := range torrent.FileSegments {
+		paths[i] = &torrent_state.FilePath{
+			Path:   segment.GetPath(),
+			Length: int32(segment.Length),
+		}
+	}
+
+	torrent.serializedState = &torrent_state.TorrentInfo{
+		Mode:          mode,
+		TorrentLength: int32(torrent.Length),
+		Infohash:      torrent.InfoHashHex,
+		Paths:         paths,
+	}
+
+	return 	torrent.serializedState
 }
 
 func calculateInfoHash(info []byte) (string, string) {

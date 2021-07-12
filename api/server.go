@@ -1,34 +1,52 @@
 package api
 
 import (
-	"DawnTorrent/api/torrent_state"
+	"DawnTorrent/rpc/torrent_state"
 	"context"
 	"errors"
 	"fmt"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"net"
+	"strconv"
+)
+
+const (
+	INTERNAL = 13
 )
 
 type CommandServer struct {
-	torrent_state.UnimplementedControlTorrentServer
+	torrent_state.UnimplementedStateServiceServer
 	myapp Control
 }
 
-func (s CommandServer) AddTorrent(ctx context.Context, info *torrent_state.TorrentInfo) (*torrent_state.SingleTorrentState, error)  {
+func (s CommandServer) AddTorrent(ctx context.Context, info *torrent_state.TorrentInfo) (*torrent_state.TorrentState, error)  {
 
 	command := command(func() (interface{},error) {
-		s.myapp.createNewTorrent(info.Path)
-		return errors.New("22")
+		err := s.myapp.createNewTorrent(info.Path)
+		if err != nil {
+			return nil, err
+		}
+		return errors.New("22"), nil
 	})
 
-	res := command.exec()
-	return res.(*torrent_state.SingleTorrentState),nil
+	res, _ := command.exec()
+	return res.(*torrent_state.TorrentState),nil
 }
 
-func (s CommandServer) Subscribe(subscription *torrent_state.Subscription, stream torrent_state.ControlTorrent_SubscribeServer) error  {
+func (s CommandServer) Subscribe(subscription *torrent_state.Subscription, stream torrent_state.StateService_SubscribeServer) error  {
 
-	s.myapp.subScribeToTorrentState(subscription,torrent_state)
+	err := s.myapp.subScribeToTorrentState(subscription, stream)
+	if err != nil {
+		err := stream.SetHeader(map[string][]string{
+			"error_code":    {strconv.Itoa(INTERNAL)},
+			"error_message": {err.Error()},
+		})
+		if err != nil {
+			return err
+		}
+		return err
+	}
 
 	return nil
 }
@@ -47,7 +65,7 @@ func StartServer(){
 	}
 
 	server := grpc.NewServer(grpc.EmptyServerOption{})
-	torrent_state.RegisterControlTorrentServer(server,CommandServer{})
+	torrent_state.RegisterStateServiceServer(server, CommandServer{})
 
 	err = server.Serve(tcp)
 	if err != nil {

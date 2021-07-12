@@ -3,6 +3,7 @@ package core
 import (
 	"DawnTorrent/core/torrent"
 	"DawnTorrent/interfaces"
+	"DawnTorrent/rpc/torrent_state"
 	"container/heap"
 	"context"
 	"errors"
@@ -63,6 +64,7 @@ type Downloader struct {
 	nPiece                 int
 	stateChan              chan int
 	writerChan             chan *Piece
+	downloaded 			   int
 }
 
 func NewTorrentDownloader(torrent *torrent.Torrent, peerManager *PeerManager, stateChan chan int) *Downloader {
@@ -308,4 +310,14 @@ func (downloader *Downloader) write(ctx context.Context) {
 		}
 	}
 
+}
+
+func (downloader *Downloader) serialize() *torrent_state.Stats{
+	return &torrent_state.Stats{
+		Bitfield:      downloader.bitfield,
+		TorrentLength: int32(downloader.torrent.Length),
+		CurrentLength: 0,
+		DownloadRate: 0,
+		UploadRate: 0,
+	}
 }

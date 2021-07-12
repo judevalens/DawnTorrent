@@ -1,6 +1,7 @@
 package main
 
 import (
+	"DawnTorrent/api"
 	"DawnTorrent/core"
 	"DawnTorrent/core/torrent"
 	"DawnTorrent/interfaces"
@@ -35,7 +36,7 @@ func init() {
 
 func main() {
 
-	//api.StartServer()
+	go api.StartServer()
 	//done := make(chan bool)
 
 	//c.addTorrent("/home/jude/GolandProjects/DawnTorrent/files/ubuntu-20.04-desktop-amd64.iso.torrent",PeerProtocol.InitTorrentFile_)

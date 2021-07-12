@@ -2,6 +2,7 @@ package tracker
 
 import (
 	"DawnTorrent/interfaces"
+	"DawnTorrent/rpc/torrent_state"
 	"context"
 	"errors"
 	"fmt"
@@ -28,6 +29,7 @@ type Announcer struct {
 	torrentManager interfaces.TorrentManagerI
 	peerManager    interfaces.PeerManagerI
 	strategy       scrapeStrategy
+	serializedState []*torrent_state.Tracker
 }
 
 func NewAnnouncer(announcerUrlString, infoHash string, manager interfaces.TorrentManagerI,peerManager interfaces.PeerManagerI) (*Announcer, error) {
@@ -67,6 +69,20 @@ func NewAnnouncer(announcerUrlString, infoHash string, manager interfaces.Torren
 	return baseTracker, nil
 }
 
+
+func (t *Announcer) Serialize() []*torrent_state.Tracker{
+	if t.serializedState != nil{
+		return t.serializedState
+	}
+	t.serializedState = make([]*torrent_state.Tracker,len(t.trackerUrls))
+	for i,trackerUrl := range t.trackerUrls {
+		t.serializedState[i] = &torrent_state.Tracker{
+			Ip: trackerUrl.String(),
+		}
+	}
+	return t.serializedState
+}
+
 func (t *Announcer) setTrackerStrategy(url *url.URL){
 	t.state.cancel()
 	if url.Scheme == "https" || url.Scheme == "http" {
@@ -97,7 +113,6 @@ func (t *Announcer) getCurrentState() string {
 func (t *Announcer) getCurrentStateInt() int  {
 	return t.torrentManager.GetState()
 }
-
 
 func (t *Announcer) getTransferStats() (int, int, int) {
 	return t.torrentManager.GetStats()

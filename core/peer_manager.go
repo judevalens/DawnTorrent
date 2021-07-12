@@ -4,6 +4,7 @@ import (
 	"DawnTorrent/interfaces"
 	"DawnTorrent/parser"
 	_ "DawnTorrent/parser"
+	"DawnTorrent/rpc/torrent_state"
 	"DawnTorrent/utils"
 	"bytes"
 	"context"
@@ -377,4 +378,25 @@ func (manager *PeerManager) updateInterest() {
 		return true
 	})
 
+}
+
+
+func (manager *PeerManager) serialize() *torrent_state.PeerSwarm{
+	peers := make([]*torrent_state.Peer, 0)
+
+	manager.activePeers.Range(func(peerID, peerI interface{}) bool {
+		peer := peerI.(*Peer)
+		peers = append(peers,&torrent_state.Peer{
+			Ip: peer.ip,
+			Id: peer.id,
+			UploadRate: 0,
+			DownloadRate: 0,
+		})
+		return true
+	})
+
+	return &torrent_state.PeerSwarm{
+		NConnectedPeer: int32(manager.nActiveConnection),
+		Peers: peers,
+	}
 }
