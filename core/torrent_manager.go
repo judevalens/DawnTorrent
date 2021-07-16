@@ -1,14 +1,13 @@
 package core
 
 import (
-	"DawnTorrent/core/state"
+	"DawnTorrent/core/subsService"
 	"DawnTorrent/core/torrent"
 	"DawnTorrent/core/tracker"
 	"DawnTorrent/interfaces"
 	"DawnTorrent/rpc/torrent_state"
 	"context"
 	log "github.com/sirupsen/logrus"
-	"reflect"
 	"sync"
 )
 
@@ -19,6 +18,7 @@ const (
 
 type torrentManagerStateI interface {
 	start()
+	pause()
 	stop()
 	complete()
 	getState() int
@@ -37,13 +37,7 @@ type TorrentManager struct {
 	state           int
 	myState         torrentManagerStateI
 	downloader      *Downloader
-	subscribers 	[]state.Subscriber
-}
-
-func (manager *TorrentManager) notifySubs(){
-	for _, subscriber := range manager.subscribers {
-		subscriber.UpdateState(manager)
-	}
+	subscribers     []subsService.Subscriber
 }
 
 func (manager *TorrentManager) GetSyncChan() chan interfaces.SyncOp {
@@ -79,67 +73,124 @@ func NewTorrentManager(torrentPath string) (*TorrentManager, error) {
 	}
 	manager.scrapper = newScrapper
 
-	manager.myState = &StoppedStated{manager: manager}
+	manager.myState = &Stopped{manager: manager}
 
 	return manager, nil
 }
 
-type startedStated struct {
+type InProgress struct {
 	manager               *TorrentManager
-	cancelDownloadRoutine context.CancelFunc
-	wait                  *sync.WaitGroup
+	downloadCancelRoutine context.CancelFunc
+	scrapperCancelFunc    context.CancelFunc
+	msgRouterCancelFunc   context.CancelFunc
+	downloadRoutineWait   *sync.WaitGroup
 }
 
-func (state startedStated) getState() int {
+func (state *InProgress) getState() int {
 	return interfaces.CompleteTorrent
 }
 
-func (state startedStated) start() {
+func (state *InProgress) start() {
 	log.Printf("manager is already started")
 
 }
 
-func (state startedStated) stop() {
-	state.cancelDownloadRoutine()
+func (state *InProgress) stop() {
+	state.downloadCancelRoutine()
+	state.downloadRoutineWait.Wait()
+	state.scrapperCancelFunc()
+	state.msgRouterCancelFunc()
 
-	state.wait.Wait()
-
-	state.manager.myState = &StoppedStated{manager: state.manager}
+	state.manager.myState = &Stopped{manager: state.manager}
+	log.Printf("Stopped....")
 }
 
-func (state startedStated) complete() {
+func (state *InProgress) pause() {
+	state.downloadCancelRoutine()
+
+	state.downloadRoutineWait.Wait()
+
+	state.manager.myState = &Paused{manager: state.manager, downloadRoutineWait: &sync.WaitGroup{}, scrapperCancelFunc: state.scrapperCancelFunc, msgRouterCancelFunc: state.msgRouterCancelFunc}
+
+	log.Printf("Paused.....")
+}
+
+func (state *InProgress) complete() {
 	panic("implement me")
 }
 
-type StoppedStated struct {
+type Stopped struct {
 	manager *TorrentManager
 }
 
-func (state StoppedStated) getState() int {
+func (state *Stopped) getState() int {
 	return interfaces.StopTorrent
 }
 
-func (state StoppedStated) start() {
+func (state *Stopped) start() {
 
 	downloaderCtx, cancelRoutine := context.WithCancel(context.TODO())
-	scrapperCtx, _ := context.WithCancel(context.TODO())
-	msgRouterCtx, _ := context.WithCancel(context.TODO())
-	waitGroup := &sync.WaitGroup{}
-	waitGroup.Add(1)
+	scrapperCtx, scrapperCancelFunc := context.WithCancel(context.TODO())
+	msgRouterCtx, msgRouterCancelFunc := context.WithCancel(context.TODO())
+	downloadRoutineWait := &sync.WaitGroup{}
+	downloadRoutineWait.Add(1)
 
 	go state.manager.msgRouter(msgRouterCtx)
 	go state.manager.scrapper.StartScrapper(scrapperCtx)
-	go state.manager.downloader.Start(downloaderCtx, waitGroup)
-	state.manager.myState = &startedStated{manager: state.manager, cancelDownloadRoutine: cancelRoutine, wait: waitGroup}
+	go state.manager.downloader.Start(downloaderCtx, downloadRoutineWait)
+	state.manager.myState = &InProgress{
+		manager:               state.manager,
+		downloadCancelRoutine: cancelRoutine,
+		scrapperCancelFunc:    scrapperCancelFunc,
+		msgRouterCancelFunc:   msgRouterCancelFunc,
+		downloadRoutineWait:   downloadRoutineWait,
+	}
 
-	log.Printf("new state: %v", reflect.TypeOf(state.manager.myState))
+	log.Printf("started...:")
 }
 
-func (state StoppedStated) stop() {
+func (state *Stopped) stop() {
 	log.Printf("manager is already stopped")
 }
+func (state *Stopped) pause() {
+	log.Printf("manager is already stopped")
+}
+func (state *Stopped) complete() {
+	panic("implement me")
+}
 
-func (state StoppedStated) complete() {
+type Paused struct {
+	manager               *TorrentManager
+	downloadCancelRoutine context.CancelFunc
+	scrapperCancelFunc    context.CancelFunc
+	msgRouterCancelFunc   context.CancelFunc
+	downloadRoutineWait   *sync.WaitGroup
+}
+
+func (state *Paused) start() {
+	downloaderCtx, cancelRoutine := context.WithCancel(context.TODO())
+	downloadRoutineWait := &sync.WaitGroup{}
+	downloadRoutineWait.Add(1)
+	go state.manager.downloader.Start(downloaderCtx, downloadRoutineWait)
+	state.manager.myState = &InProgress{manager: state.manager, downloadCancelRoutine: cancelRoutine, downloadRoutineWait: downloadRoutineWait}
+}
+
+func (state *Paused) pause() {
+	log.Printf("Already paused")
+}
+
+func (state *Paused) stop() {
+	log.Panicf("cannot stop")
+	state.scrapperCancelFunc()
+	state.msgRouterCancelFunc()
+	state.manager.myState = &Stopped{manager: state.manager}
+}
+
+func (state *Paused) complete() {
+	panic("implement me")
+}
+
+func (state *Paused) getState() int {
 	panic("implement me")
 }
 
@@ -153,10 +204,12 @@ func (manager *TorrentManager) GetState() int {
 func (manager *TorrentManager) Init() {
 	for {
 		manager.state = <-manager.stateChan
-		log.Printf("new state : %v", manager.state)
+		log.Printf("new subsService : %v", manager.state)
 		switch manager.state {
 		case interfaces.StartTorrent:
 			manager.myState.start()
+		case interfaces.PauseTorrent:
+			manager.myState.pause()
 		case interfaces.StopTorrent:
 			manager.myState.stop()
 		case interfaces.CompleteTorrent:
@@ -164,6 +217,7 @@ func (manager *TorrentManager) Init() {
 			log.Printf("torrent is completed")
 
 		}
+		//manager.notify()
 	}
 
 }
@@ -185,14 +239,24 @@ func (manager *TorrentManager) msgRouter(ctx context.Context) {
 	}
 }
 
-func (manager *TorrentManager) serialize() torrent_state.TorrentState{
+func (manager *TorrentManager) serialize() *torrent_state.TorrentState {
 
-	return torrent_state.TorrentState{
-		Infohash: manager.Torrent.InfoHashHex,
-		Torrent: manager.Torrent.Serialize(),
-		Stats: manager.downloader.serialize(),
-		Trackers: manager.scrapper.Serialize(),
+	return &torrent_state.TorrentState{
+		Infohash:  manager.Torrent.InfoHashHex,
+		Torrent:   manager.Torrent.Serialize(),
+		Stats:     manager.downloader.serialize(),
+		Trackers:  manager.scrapper.Serialize(),
 		PeerSwarm: manager.PeerManager.serialize(),
 	}
 
+}
+
+func (manager *TorrentManager) notify() {
+	for _, subscriber := range manager.subscribers {
+		subscriber.UpdateState(manager.serialize())
+	}
+}
+
+func (manager *TorrentManager) SubscribeToStateChange(subscriber subsService.Subscriber) {
+	manager.subscribers = append(manager.subscribers, subscriber)
 }

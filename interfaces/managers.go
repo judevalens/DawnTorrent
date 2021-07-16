@@ -8,6 +8,7 @@ import (
 
 const (
 	StartTorrent    = iota
+	PauseTorrent    = iota
 	StopTorrent     = iota
 	CompleteTorrent = iota
 )

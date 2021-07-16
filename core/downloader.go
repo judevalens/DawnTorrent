@@ -128,10 +128,14 @@ func (downloader *Downloader) Start(ctx context.Context,mainRoutineWaitG *sync.W
 	workerWaitGroup := &sync.WaitGroup{}
 	ctx2,cancelFunc := context.WithCancel(context.TODO())
 
+	// channels have to be reset
 
-	go downloader.download(ctx, workerWaitGroup,mainRoutineWaitG,cancelFunc)
+	downloadJobChan := make(chan *Piece, downloader.nWorker)
+	signalChan := make(chan int)
+
+	go downloader.download(ctx, workerWaitGroup,mainRoutineWaitG,cancelFunc,downloadJobChan,signalChan)
 	// spawning workers
-	go downloader.startWorker(ctx, workerWaitGroup)
+	go downloader.startWorker(ctx, workerWaitGroup,downloadJobChan,signalChan)
 
 	// dependent routines
 	go downloader.write(ctx2)
@@ -143,29 +147,35 @@ func (downloader *Downloader) Start(ctx context.Context,mainRoutineWaitG *sync.W
 	Sends block request to peers. and resends block requests that have not been fulfilled by peers
 */
 
-func (downloader *Downloader) startWorker(ctx context.Context, workerWaitGroup *sync.WaitGroup) {
+func (downloader *Downloader) startWorker(ctx context.Context, workerWaitGroup *sync.WaitGroup,downloadJobChan chan *Piece,signalChan chan int) {
 	i := 0
 	for i < downloader.nWorker {
-		go func(ctx2 context.Context, workerWaitGroup *sync.WaitGroup, i int) {
+		workerCtx,_ := context.WithCancel(ctx)
+		go func(ctx2 context.Context, workerWaitGroup *sync.WaitGroup, i int,downloadJobChan chan *Piece,signalChan chan int) {
 			workerWaitGroup.Add(1)
-			downloader.signalChan <- i
+			log.Printf("starting worker %v",i)
+			signalChan <- i
+			log.Printf("worker %v sent initial signal", i)
 			for {
 				select {
 				case <-ctx2.Done():
-					log.Fatal("should not happen")
+					log.Printf("shutting worker %v down 1", i)
+					workerWaitGroup.Done()
 					return
-				case piece := <-downloader.downloadJobs:
+				case piece := <-downloadJobChan:
 					if piece == nil {
 						log.Printf("shutting worker %v down 2", i)
 						workerWaitGroup.Done()
 						return
 					}
+
+					//time.Sleep(time.Second)
 					peerRequest := &PeerRequest{
 						pieceIndex: piece.PieceIndex,
 						response:   make(chan *Peer),
 					}
 
-					log.Debugf("worker %v requesting piece %v ...., length %v",i,piece.PieceIndex,piece.pieceLength)
+					log.Infof("worker %v requesting piece %v ...., length %v",i,piece.PieceIndex,piece.pieceLength)
 
 					downloader.peerManager.peerChan <- peerRequest
 					peer := <-peerRequest.response
@@ -188,40 +198,41 @@ func (downloader *Downloader) startWorker(ctx context.Context, workerWaitGroup *
 
 					log.Debugf("worker %v, just downloaded a piece : %v", i, piece.PieceIndex)
 
-					downloader.signalChan <- i
+					signalChan <- i
 				}
 
 			}
 
-		}(ctx, workerWaitGroup, i)
+		}(workerCtx, workerWaitGroup, i,downloadJobChan,signalChan)
 		i++
 	}
 
 
 }
 
-func (downloader *Downloader) download(ctx context.Context, workerWaitGroup *sync.WaitGroup,mainRoutinesWg *sync.WaitGroup,cancelChildRoutines context.CancelFunc) {
+func (downloader *Downloader) download(ctx context.Context, workerWaitGroup *sync.WaitGroup,mainRoutinesWg *sync.WaitGroup,cancelChildRoutines context.CancelFunc,downloadJobChan chan *Piece,signalChan chan int) {
 
 	sentShutDownSignal := false
 	isShuttingDown := false
+	localCtx,cancelFunc := context.WithCancel(context.TODO())
 	for {
 		select {
 		case <-ctx.Done():
 			isShuttingDown = true
-			return
-		case i := <-downloader.signalChan:
+		case i := <-signalChan:
 
 			piece, isCompleted, err := downloader.selectPiece()
 			if err != nil{
 				log.Panicf("failed to select piece\n%v",err.Error())
 			}
-			if isCompleted ||isShuttingDown{
+			if isCompleted||isShuttingDown{
 
 				if !sentShutDownSignal {
 					go func() {
 						workerWaitGroup.Wait()
 						cancelChildRoutines()
 						mainRoutinesWg.Done()
+						cancelFunc()
 
 						if isCompleted {
 							downloader.stateChan <- interfaces.CompleteTorrent
@@ -232,7 +243,10 @@ func (downloader *Downloader) download(ctx context.Context, workerWaitGroup *syn
 			}
 
 			log.Debugf("received signal from worker %v", i)
-			downloader.downloadJobs <- piece
+			downloadJobChan <- piece
+		case <- localCtx.Done():
+			println("actual end")
+			return
 
 		}
 

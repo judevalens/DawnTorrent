@@ -4,7 +4,6 @@ import (
 	"DawnTorrent/api"
 	"DawnTorrent/core"
 	"DawnTorrent/core/torrent"
-	"DawnTorrent/interfaces"
 	"DawnTorrent/utils"
 	"bufio"
 	"fmt"
@@ -59,7 +58,7 @@ func main() {
 
 	manager1, _ := core.NewTorrentManager(torrentPath)
 	go manager1.Init()
-	manager1.SetState(interfaces.StartTorrent)
+	//manager1.SetState(interfaces.StartTorrent)
 
 	println("non blocking")
 
@@ -89,7 +88,7 @@ func main() {
 		}
 
 		_ = state
-		//manager1.SetState(state)
+		manager1.SetState(state)
 		i++
 	}
 

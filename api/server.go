@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"net"
 	"strconv"
 )
@@ -51,6 +53,13 @@ func (s CommandServer) Subscribe(subscription *torrent_state.Subscription, strea
 	return nil
 }
 
+
+func (s CommandServer) RemoveTorrent(context.Context, *torrent_state.TorrentInfo) (*torrent_state.TorrentState, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RemoveTorrent not implemented")
+}
+func (s CommandServer) ControlTorrent(context.Context, *torrent_state.Control) (*torrent_state.TorrentState, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ControlTorrent not implemented")
+}
 
 func StartServer(){
 	addr, err := net.ResolveTCPAddr("tcp", fmt.Sprintf(":%v", 22292))
